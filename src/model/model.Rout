@@ -1,0 +1,4072 @@
+
+R version 4.3.1 (2023-06-16) -- "Beagle Scouts"
+Copyright (C) 2023 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+Setting theme "Compact"
+Setting theme "language: en"
+Setting theme "Exploratory Data Analysis"
+
+- Settings loaded...
+> library(conflicted)
+> library(furrr)
+Loading required package: future
+> library(MatchIt)
+> library(cobalt)
+ cobalt (Version 4.5.5, Build Date: 2024-04-02)
+> library(sjmisc)
+> library(sjlabelled)
+> library(lme4)
+Loading required package: Matrix
+> library(multcomp)
+Loading required package: mvtnorm
+Loading required package: survival
+
+Attaching package: ‘survival’
+
+The following object is masked from ‘package:future’:
+
+    cluster
+
+Loading required package: TH.data
+Loading required package: MASS
+
+Attaching package: ‘MASS’
+
+The following object is masked from ‘package:gtsummary’:
+
+    select
+
+
+Attaching package: ‘TH.data’
+
+The following object is masked from ‘package:MASS’:
+
+    geyser
+
+> library(writexl)
+> library(readxl)
+> library(dtplyr)
+> library(labelled)
+> library(kableExtra)
+> library(modelsummary)
+`modelsummary` 2.0.0 now uses `tinytable` as its default table-drawing backend. Learn more at:
+  https://vincentarelbundock.github.io/tinytable/
+
+Revert to `kableExtra` for one session:
+
+  options(modelsummary_factory_default = 'kableExtra')
+  options(modelsummary_factory_latex = 'kableExtra')
+  options(modelsummary_factory_html = 'kableExtra')
+
+Silence this message forever:
+
+  config_modelsummary(startup_message = FALSE)
+> library(marginaleffects)
+> library(glue)
+> library(magrittr)
+> library(broom)
+> library(broom.mixed)
+> library(cowplot)
+> library(patchwork)
+> library(jtools)
+> library(ggh4x)
+> library(rstatix)
+> library(scales)
+> library(tidyverse)
+── Attaching core tidyverse packages ──────────────────────────────────────────────────────────────── tidyverse 2.0.0 ──
+✔ dplyr     1.1.4     ✔ readr     2.1.5
+✔ forcats   1.0.0     ✔ stringr   1.5.1
+✔ lubridate 1.9.3     ✔ tibble    3.2.1
+✔ purrr     1.0.2     ✔ tidyr     1.3.0
+> conflicts_prefer(
++     dplyr::select,
++     readxl::read_excel,
++     dplyr::filter,
++     dplyr::lag,
++     tidyr::nest,
++     sjlabelled::label_to_colnames,
++     sjlabelled::as_label,
++     kableExtra::group_rows
++ )
+[conflicted] Will prefer dplyr::select over any other package.
+[conflicted] Will prefer readxl::read_excel over any other package.
+[conflicted] Will prefer dplyr::filter over any other package.
+[conflicted] Will prefer dplyr::lag over any other package.
+[conflicted] Will prefer tidyr::nest over any other package.
+[conflicted] Will prefer sjlabelled::label_to_colnames over any other package.
+[conflicted] Will prefer sjlabelled::as_label over any other package.
+[conflicted] Will prefer kableExtra::group_rows over any other package.
+> ##
+> source("../__paths__.R")
+
+Loading relative paths...
+> source("../__constants__.R")
+
+Loading constants...
+> ## 
+> PRR = F
+> SAVE = F
+> SAVE = T
+> ##
+> time.start <- Sys.time() # code time profile
+> 
+> ## * functions
+> ## ** dot functions
+> 
+> .table <- function(data, v1, v2, groups=NULL,
++                    margin='all',
++                    stat="both",
++                    total=c("row", "col"),
++                    use.labels=T,
++                    digits=1)
++ {
++     ## handling groups NULL
++     groups <- rlang::enquo(groups)
++     if (rlang::quo_is_null(groups)) {
++         groups <- NULL
++     } else if (rlang::quo_is_symbol(groups)) {
++         groups <- rlang::get_expr(groups)
++     } 
++ 
++     data = data %>% select(!!rlang::ensym(v1), !!rlang::ensym(v2), !!groups)
++     if (use.labels) {
++         data = data%>% sjlabelled::as_label(.) 
++     }
++     res = (
++         data  
++         %>% nest(-!!groups)
++         %>% mutate(
++                 data = future_map(.x=data,
++                                   function(.x)
++                                   (
++                                       if (stat=='n') {
++                                           (.x
++                                               %>% tabyl(!!rlang::ensym(v1), !!rlang::ensym(v2))   
++                                               %>% adorn_totals(total)
++                                           )
++                                       }else if (stat=='prop'){
++                                           (.x
++                                               %>% tabyl(!!rlang::ensym(v1), !!rlang::ensym(v2))   
++                                               %>% adorn_totals(total)
++                                               %>% adorn_percentages(margin)
++                                           )
++                                       }else{
++                                           (.x
++                                               %>% tabyl(!!rlang::ensym(v1), !!rlang::ensym(v2))   
++                                               %>% adorn_totals(total)
++                                               %>% adorn_percentages(margin) 
++                                               %>% adorn_pct_formatting(digits = digits) 
++                                               %>% adorn_ns() 
++                                           )
++                                       }
++                                   ))
++             )
++         %>% unnest(data)
++     )    
++     ## ----- printing -----
++     row.label = var_label(data %>% pull(!!rlang::ensym(v1)))
++     row.label = ifelse(is.null(row.label), '--', row.label)
++     col.label = var_label(data %>% pull(!!rlang::ensym(v2)))
++     col.label = ifelse(is.null(col.label), '--', col.label)
++     cat(glue("\n\n",
++              "Rows: {row.label} ({rlang::ensym(v1)})",
++              "\n",
++              "Cols: {col.label} ({rlang::ensym(v2)})",
++              "\n\n"))
++     res%>% print(n=Inf)
++     ## ----- -------- -----
++     invisible(res)
++ }
+> 
+> .freq <- function(data, v, groups=NULL, na.rm=F, print.labels=F)
++ {
++     ## handling groups NULL
++     groups <- rlang::enquo(groups)
++     if (rlang::quo_is_null(groups)) {
++         groups <- NULL
++     } else if (rlang::quo_is_symbol(groups)) {
++         groups <- rlang::get_expr(groups)
++     } 
++ 
++     res = (
++         data 
++         %>% nest(-!!groups)
++         %>% mutate(
++                 data = future_map(.x=data,
++                                   function(.x)
++                                   (
++                                       .x
++                                       %>% sjmisc::frq(!!rlang::ensym(v), show.na=!na.rm)
++                                       %>% data.frame()
++                                       %>% as_tibble() 
++                                   ))
++             )
++         %>% unnest(data) 
++         %>% select(!!groups, variable, everything())  
++         ## %>% arrange(!!rlang::enquo(groups))
++         %>% rename(
++                 n = frq,
++                 perc = raw.prc,
++                 perc.cum = cum.prc
++             )
++         
++         )
++     ## ---- printing --------
++     cat(glue("\n\n\nVariable: \n\n",
++                  "{unique(res$variable)}\n\n"))
++     if (print.labels) {
++         labels = (
++             res  
++             %>% mutate(label = glue("({val}) {label}")) 
++             %>% pull(label)
++             %>% paste(., collapse='; ')
++         )
++         cat(glue("{labels}\n\n"))
++     }
++     cat('\n')
++     res%>% select(-variable)%>%  print(n=Inf)
++     ## ---- printing --------
++     invisible(res)
++ }
+> 
+> .descriptive.statistics <- function(data, vars=NULL, groups=NULL, use.labels=T)
++ {
++     ## handling vars NULL
++     vars <- rlang::enquo(vars)
++     if (rlang::quo_is_null(vars)) {
++         vars=names(data)
++     } else if (rlang::quo_is_symbol(vars)) {
++         vars <- rlang::get_expr(vars)
++     } 
++     ## ## 
++     ## handling groups NULL
++     groups <- rlang::enquo(groups)
++     if (rlang::quo_is_null(groups)) {
++         groups <- NULL
++     } else if (rlang::quo_is_symbol(groups)) {
++         groups <- rlang::get_expr(groups)
++     }
++     ## 
++     data = data %>% select(!!vars, !!groups)
++     res = (
++         data
++         %>% nest(-!!groups) 
++         %>% mutate(
++                 nobs = future_map_int(.x=data, function(.x) nrow(.x)),
++                 summary = future_map2(.x=data, .y=nobs, function(.x, .y)
++                     .x
++                     %>% get_summary_stats(type='common')  
++                     %>% select(-ci) 
++                     %>% mutate(`Missing (%)`=100*(.y-n)/.y) 
++                     %>% select(#!!vars.labels[groups],
++                             Variable=variable,
++                             N=n,
++                             contains("Miss"),
++                             Mean=mean,
++                             Std.Dev=sd,
++                             Std.Err=se,
++                             Min=min,
++                             Median=median,
++                             Max=max,
++                             IQR=iqr) 
++                     ))  
++         %>% select(-data, -nobs)
++         %>% unnest(summary)
++     )
++     if (use.labels) {
++         var.names  = data %>% names()
++         var.labels = data %>% label_to_colnames() %>% names()
++         res = (
++             res 
++             %>% mutate(Variable = factor(Variable,
++                                          var.names,
++                                          var.labels))
++         )
++         ## needed to rename labels of grouping variables, when groups are not NULL
++         groups <- rlang::enquo(groups)
++         if (!rlang::quo_is_null(groups)){
++             res = (
++                 res 
++                 %>% set_variable_labels(., !!!setNames(var.names, var.labels), .strict=F) 
++                 %>% sjlabelled::label_to_colnames()
++             )
++         }
++     }
++     res %>% print(n=Inf)
++     invisible(res)
++ }
+> 
+> .get_controls <- function(X)
++ {
++     return(paste(X, collapse=' + '))
++ }
+> 
+> .signif_transformer <- function(digits = 3)
++ {
++     force(digits)
++     function(text, envir) {
++         x <- identity_transformer(text, envir)
++         if (is.numeric(x)) {
++             signif(x, digits = digits)
++         } else {
++             x
++         }
++     }
++ }
+> 
+> .str_replace <- function(s, replace)
++ {
++     res = vapply(s,
++                  function(x) ifelse(x %in% names(replace),
++                                     sub(x=x, pattern=names(replace[x]), replacement=replace[x]),
++                                     x),
++                  FUN.VALUE = '')
++     return(res)
++ }
+> 
+> ## ** others
+> 
+> ptable  <- function(data, v1, v2,
++                     margin='all',
++                     total=c("row", "col"),
++                     use.labels=T,
++                     digits=2)
++ {
++     data = data %>% select(v1=!!v1, v2=!!v2) 
++     if (use.labels) {
++         data = data %>% sjlabelled::as_label(.) 
++     }
++     res = (
++         data
++         %>% tabyl(v1, v2)  
++         %>% adorn_totals(total)
++         %>% adorn_percentages(margin) 
++         %>% adorn_pct_formatting(digits = digits) 
++         %>% adorn_ns() 
++         ## %>% adorn_title("combined")
++         %>% as_tibble()   
++         %>% rename(!!v1:=v1)
++     )    
++     row.names(res) = res %>% pull(v1)
++     return(res)
++ }
+> 
+> descriptive.statistics <- function(data, use.labels=T, groups=NULL)
++ {
++     nobs = nrow(data)
++     if (!is.null(groups)) {data = data %>% group_by_at(vars(groups))}
++     if (use.labels) {data = data %>% label_to_colnames()}
++     print(data)
++     res = (
++         data
++         %>% get_summary_stats(type='common')  
++         %>% select(-se, -ci) 
++         %>% mutate(`Missing (%)`=100*(nobs-n)/nobs) 
++         %>% select(!!groups,
++                    Variable=variable,
++                    N=n,
++                    contains("Miss"),
++                    Mean=mean,
++                    Std.Dev=sd,
++                    Min=min,
++                    Median=median,
++                    Max=max,
++                    IQR=iqr)
++     )
++     return(res)
++ }
+> 
+> sample.vs.census <- function(df, var, tables, SAVE, scale.down=T, column.spec=NULL)
++ {
++     census  = read_excel(file.path(PATH_DATA_FINAL,'quotas.xlsx'), glue("{var}-census")) 
++     sample  = df %>% distinct(rid, .keep_all=TRUE)  %>% select(var)
++     ## table
++     ## -----
++     tab = (
++         sample
++         %>% frq(!!var)
++         %>% data.frame()
++         %>% as_tibble()   
++         %>% left_join(., census %>%  
++                          mutate(freq=round(100*freq, digits=2))%>% 
++                          select(category, code, "Freq (Census)"=freq)
++                     , by=c("val"='code')) 
++         %>% select(
++                 Code=val,
++                 Category='label',
++                 "N (survey)"=frq,
++                 "Freq (survey)" = raw.prc,
++                 contains("Freq")
++             )
++         %>% arrange(Code)  
++         %>% drop_na(Code, Category) 
++     ) 
++     tab %>% print(., n=Inf) 
++     ## latex
++     ## -----
++     caption = tables %>% filter(var==!!var)  %>% pull(caption)
++     tabl = (
++         tab
++         %>% kable(., "latex", booktabs = T, caption=caption,
++                   escape=T, align=c("ll", rep("c", ncol(.)-2)),
++                   digits=4, longtable = F, table.envir = "table",
++                   linesep = NULL)  
++     )
++     if (!is.null(column.spec)) {
++         tabl = tabl %>% column_spec(., 2, width = column.spec, border_right = F) 
++     }
++     if (scale.down) {
++         tabl = tabl %>% kable_styling(latex_options = c("scale_down", "repeat_header"),
++                                     position = "center", font_size=NULL) 
++     }
++     ## 
++     table = tables %>% filter(var==!!var)  %>% pull(table)
++     if (PRR) {
++         tabl = str_replace(string=tabl,
++                            pattern="\\\\caption",
++                            replacement="\\\\placeholdertable{120}{-90}\\\n\\\\caption")
++     }
++     if(SAVE){save.table(tab, tabl, PATH_MAN_TABLES, table)}
++ }
+> 
+> save.figure <- function(g, tab, path, fn, width=NA, height=NA)
++ {
++     figure = fn
++     ## table
++     cat(glue("\n\nSaving table of figure {figure}...") )
++     fn = file.path(path, glue("{figure}"))
++     write.table(x=tab, file=glue("{fn}.csv") , row.names=F, sep=';')
++     write_xlsx(x=tab, path=glue("{fn}.xlsx"))
++     cat("done!\n")
++     ## 
++     cat(glue("Saving figure {figure}...") )
++     fn  = c(glue("{figure}.pdf"),
++             glue("{figure}.png"),
++             glue("{figure}.jpg"))
++     fns = file.path(path, fn)
++     for (fn in fns){ggsave(g, filename=fn, width=width, height=height)}
++     cat("done!\n")
++ }
+> 
+> save.table <- function(tab, tabl, path, fn)
++ {
++     table=fn
++     cat(glue("Saving {table}...") )
++     fn = file.path(path, glue("{table}"))
++     write.table(x=tab, file=glue("{fn}.csv") , row.names=F, sep=';')
++     write_xlsx(x=tab, path=glue("{fn}.xlsx"))
++     writeLines(text=tabl, glue("{fn}.tex"))
++     cat("done!\n")
++ }
+> 
+> get_controls <- function(X)
++ {
++     return(paste(X, collapse=' + '))
++ }
+> 
+> estimate <- function(formula, data, pid, ref.group='G0')
++ {
++     data = (
++         data 
++         %>% remove_val_labels()  
++         %>% mutate(treat.group = factor(as.character(treat.group)),
++                    treat.group = relevel(treat.group, ref=ref.group)) 
++     )
++     fit    = glm(formula, data=data, family='binomial')
++     summ   = broom::tidy(fit, conf.int=TRUE)
++     glance = glance(fit)
++     pred   = make_predictions(fit,
++                               pred=pid,
++                               at=list(treat.group=c('G0', 'G0 (aware)',
++                                                     'G1', 'G2',
++                                                     'G3', 'G4')), interval=T)
++     res = tibble(fit   = list(fit),
++                  summ  = list(summ),
++                  glance= list(glance),
++                  pred  = list(pred)
++                  )
++     return(res)
++ }
+> 
+> estimate.did <- function(fit, pid, digits=2)
++ {
++     ## marginal effects (dg(mu)/dP) labels
++     G0.aware = glue("{pid}:treat.groupG0 (aware)") 
++     G1       = glue("{pid}:treat.groupG1") 
++     G2       = glue("{pid}:treat.groupG2") 
++     G3       = glue("{pid}:treat.groupG3") 
++     G4       = glue("{pid}:treat.groupG4") 
++     
++     ## marginal effects (dg(mu)/dP) labels
++     b1       = coef(fit)[G1]
++     b2       = coef(fit)[G2]
++     b3       = coef(fit)[G3]
++     b4       = coef(fit)[G4]
++     b0.aware = coef(fit)[G0.aware]
++     b2.aware = b2 - b0.aware 
++     b4.aware = b4 - b0.aware 
++ 
++     ## differences
++     test.ds = glue("({G1}) - ({G2} - `{G0.aware}`) == 0")
++     test.rs = glue("({G3}) - ({G4} - `{G0.aware}`) == 0")
++     did.ds = tidy(summary(glht(fit, linfct = test.ds)), conf.int=T)
++     did.rs = tidy(summary(glht(fit, linfct = test.rs)), conf.int=T)
++     did = bind_rows(did.ds %>% mutate(cue='ds'),
++                     did.rs %>% mutate(cue='rs')) 
++ 
++     did = (
++         did
++         %>% rename(test=lhs)  
++         %>% select(-rhs) 
++         %>% select(cue, all_of(names(.))) 
++         %>% mutate(label=str_replace_all(string=test, pattern="treat.group", replacement="") %>%
++                        str_replace_all(string=., pattern="(pid|psid|):|`", replacement=""),
++                    PxG1                    = b1,
++                    PxG2                    = b2,
++                    PxG3                    = b3,
++                    PxG4                    = b4,
++                    `PxG2 (aware)`          = b2.aware,
++                    `PxG4 (aware)`          = b4.aware,
++                    `PxG0 (aware)`          = b0.aware,
++                    ##
++                    baseline.group = case_when(cue == 'ds' ~ 'G1',
++                                               cue == 'rs' ~ 'G3'),
++                    aware.group = case_when(cue == 'ds' ~ 'G2',
++                                            cue == 'rs' ~ 'G4'),
++                    PxCue = case_when(cue == 'ds' ~ b1,
++                                      cue == 'rs' ~ b3),
++                    PxCue.aware = case_when(cue == 'ds' ~ b2.aware,
++                                            cue == 'rs' ~ b4.aware),
++                    ## DiD
++                    did = PxCue - PxCue.aware,
++                    change = 100*abs(PxCue - PxCue.aware)/abs(PxCue),
++                    )   
++         ## labels
++         %>% mutate(
++                 stars = case_when(p.value<0.001 ~ '***',
++                                   p.value<0.01  ~ '**',
++                                   p.value<0.05  ~ '*',
++                                   p.value<0.1   ~ '+',
++                                   T ~ '',
++                                   ),
++                 did.label = glue("{round(did, digits)}{stars} ",
++                                  "({round(conf.low, digits)}, {round(conf.high, digits)})"),
++                 change.arrow = case_when(p.value>=0.05 ~ "0",
++                                          PxCue  >=PxCue.aware & cue=='rs'~"\\downarrow",
++                                          PxCue  < PxCue.aware & cue=='rs'~"\\uparrow",
++                                          ## 
++                                          ## For ds cue, less cue effect under awareness
++                                          ## means that cue effect under awareness is larger
++                                          ## because cue effect should be negative
++                                          ## PiD scale, goes from
++                                          ## Democratic voter (lower value) to
++                                          ## Republican voters (higher value)
++                                          ## So, ds cue should reduce support (less negative)
++                                          ## as pid increases
++                                          PxCue  <=PxCue.aware & cue=='ds'~"\\downarrow",
++                                          PxCue  > PxCue.aware & cue=='ds'~"\\uparrow",
++                                          ),
++                 change.label = paste0(round(change, 1), "\\% (", change.arrow, ")")
++             )
++     ) 
++     return(did)
++ }
+> 
+> check_did <- function(res.did, cue, row=1)
++ {
++     cat("\n ------------ Checking (manual check Did) ------------\n")
++     i = row
++     if (cue=='ds') {
++         G.ref = 'G1'
++         G.treat = 'G2'
++     }else{
++         G.ref = 'G3'
++         G.treat = 'G4'
++     }
++     tmp     = res.did %>% filter(cue==!!cue)  %>%  remove_val_labels()
++     row.names(tmp) = 1:nrow(tmp)
++     tmp     = tmp[i,]
++     policy  = tmp$policy
++     formula = tmp$formula
++     pid     = tmp$pid
++     ncovars = tmp$ncovars
++     tmp.data= tmp$data[[1]] 
++     cat("\n--------------- Computed: ---------------\n")
++     print(tmp  %>% t())
++     cat("\n--------------- Replication: ---------------\n")
++     test = tmp$test
++     mod1 = tmp$fit[[1]]
++     print(tidy(summary(glht(mod1, linfct = glue("{test} == 0") )), conf.int=T))
++     cat("\n---------------Manual check:---------------\n")
++     mod1a = glm(formula, data=tmp.data, family="binomial")
++     mod2a = glm(formula, data=tmp.data %>%
++                              mutate(treat.group=relevel(as.factor(treat.group), 'G0 (aware)')),
++                 family="binomial")
++     ## mod1; mod2
++     cat("\nModel with G0 as reference:\n")
++     print(tibble( 
++         `G0 (aware)`=coef(mod1a)[glue('{pid}:treat.groupG0 (aware)')],
++         !!glue("P x {G.ref}")   :=coef(mod1a)[glue('{pid}:treat.group{G.ref}')],
++         !!glue("P x {G.treat}") :=coef(mod1a)[glue('{pid}:treat.group{G.treat}')],
++         ) %>% t())
++     cat("\nModel with G0 (aware) as reference:\n")
++     print(tibble( 
++         !!glue("P x {G.ref}")   :=coef(mod2a)[glue('{pid}:treat.group{G.ref}')],
++         !!glue("P x {G.treat}") :=coef(mod2a)[glue('{pid}:treat.group{G.treat}')],
++         `G0`        =coef(mod2a)[glue('{pid}:treat.groupG0')],
++         ) %>% t())
++     cat("\nSame reg, subtracting the Aware effect:\n")
++     (
++         coef(mod1a)[glue('{pid}:treat.group{G.ref}')] -
++         (coef(mod1a)[glue('{pid}:treat.group{G.treat}')]-
++          coef(mod1a)[glue('{pid}:treat.groupG0 (aware)')])
++     ) %>% print()
++     cat("\nUsing 2 reg with different reference groups:\n")
++     (
++         coef(mod1a)[glue('{pid}:treat.group{G.ref}')] - coef(mod2a)[glue('{pid}:treat.group{G.treat}')] 
++     ) %>% print()
++ 
++ }
+> 
+> create_fig1 <- function(tab, leg.ncol)
++ {
++     x = 'cue'
++     y = "avg"
++     fill = 'pid.cat'
++     linetype = "policy"
++     facet1 = 'pid.cat'
++     facet2 = 'aware'
++     colors = c('Democratic voter' = "blue",
++                'Republican voter' = 'red')
++     leg = tab %>% pull(policy.group) %>% extract2(1)
++     g <- (
++         ggplot(tab) 
++         + geom_line(aes_string(x=x, y=y, color=fill, 
++                                fill=fill, group=linetype, linetype=linetype)) 
++         + geom_point(aes_string(x=x, y=y, fill=fill, shape=linetype), size=3.5) 
++         + scale_shape_manual(values = 21:24) 
++         + scale_color_manual(values = colors) 
++         + scale_fill_manual(values = colors) 
++         + facet_nested(formula(glue("grid_title2+{facet2} ~ {facet1}") ) )
++         + ylim(0,1)
++         + labs(
++               x        = 'Party Cue Treatment',
++               y        = 'Proportion Supporting the Policy',
++               color    = leg, 
++               fill     = leg,
++               linetype = leg,
++               shape    = leg
++           )
++         + ggguides(ncol = leg.ncol) 
++         + ggtheme2()
++         + guides(fill = 'none', color='none')
++     )
++     return(g)
++ }
+> 
+> create_fig2 <- function(tab, policy.group)
++ {
++     x = "term"
++     y = "estimate"
++     color    = NULL
++     fill     = 'policy'
++     facet1   = 'aware'
++     facet2   = NULL
++     title    = NULL
++     subtitle = NULL
++     caption  = NULL
++     dodge    = .4
++     ylab     = 'Avearge Treatment Effect on Policy Support'
++     xlab     = 'Treatment Group (Party Cue)'
++     leg      = policy.group
++     g = (
++         tab  
++         %>% filter(policy.group==!!policy.group) 
++         %>% ggplot(.)
++         + geom_hline(aes(yintercept=0) ,linetype="dashed", col="red")
++         + geom_errorbar(aes_string(x=x, ymin="conf.low", ymax="conf.high", color=fill),
++                         width=.2,
++                         position = position_dodge(dodge)) 
++         + geom_point(aes_string(x=x, y=y, fill=fill, shape=fill), position = position_dodge(dodge))
++         ## 
++         + scale_shape_manual(values=c(21,22,23, 24))
++         + scale_fill_grey(start = 0, end = .7, na.value="red") 
++         + scale_color_grey(start = 0, end = .7, na.value="red") 
++         ## 
++         + facet_wrap(glue("~ {facet1}"), ncol = 1, scales='free_x')
++         + theme_bw()
++         + ggtheme2()
++         + ggguides(ncol=1)
++         ##
++         + labs(
++               x        = xlab,
++               y        = ylab,
++               color    = leg, 
++               fill     = leg,
++               linetype = leg,
++               shape    = leg,
++               title    = title,
++               subtitle = subtitle,
++               caption  = caption
++           )
++     )
++     return(g)
++ }
+> 
+> create_fig3 <- function(tab, aware)
++ {
++     x = 'pid'
++     y = "att"
++     fill = NA
++     lt = 3
++     facet1 = 'group'
++     if (aware=='Not aware')
++     {
++         xlab = NULL
++         tabt = tab %>% filter(aware=='Not aware') 
++     }else{
++         xlab = "Voters' Party Identification"
++         tabt = tab %>%
++             filter(aware=='Aware')  %>%
++             filter(group!='Control') 
++     }
++     xbreaks = c(-1, 1)
++     xlabels = c('Strong\nDem.', 'Strong\nRep.')
++     title = aware
++     g = (
++         tabt 
++         %>% ggplot()
++         + geom_line(aes_string(x=x, y=y))
++         + geom_line(aes_string(x=x, y='ymin'), linetype=lt)
++         + geom_line(aes_string(x=x, y='ymax'), linetype=lt)
++         + facet_wrap(paste("~", facet1), nrow=1, scales='free')
++         + scale_x_continuous(breaks=xbreaks, limits=c(-1.1, 1.1), labels=xlabels)
++         + ylim(0,1)
++         + labs(
++               x=xlab,
++               y='Predicted Probability',
++               color=NULL, 
++               fill=NULL,
++               linetype=NULL,
++               shape=NULL,
++               title=title,
++               caption=NULL
++           )
++         + ggtheme2()
++         + theme(
++               axis.text.x=element_text(colour="gray20", size=7),
++               plot.title=element_text(hjust=0, size=9, colour='grey40', face='bold'),
++               strip.text.x=element_text(size=8, face='bold', hjust=0)
++           )  
++     )
++     return(g)
++ }
+> 
+> .signif_transformer <- function(digits = 3)
++ {
++     force(digits)
++     function(text, envir) {
++         x <- identity_transformer(text, envir)
++         if (is.numeric(x)) {
++             signif(x, digits = digits)
++         } else {
++             x
++         }
++     }
++ }
+> 
+> 
+> ## * loading
+> 
+> fn = file.path(PATH_DATA_FINAL, "survey.Rdata")
+> load(file=fn)
+> df %>% glimpse()
+Rows: 6,384
+Columns: 27
+$ rid          <chr> "R_6qb7c7UaLYskbIV", "R_6qb7c7UaLYskbIV", "R_6qb7c7UaLYskbIV", "R_6qb7c7UaLYs…
+$ age          <dbl+lbl> 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 6, 6, 6, 6, 8…
+$ age.std      <dbl> -1.19337, -1.19337, -1.19337, -1.19337, -1.19337, -1.19337, -1.19337, -1.1933…
+$ educ         <dbl+lbl> 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 3…
+$ educ.std     <dbl> -0.1293, -0.1293, -0.1293, -0.1293, -0.1293, -0.1293, -0.1293, -0.1293, -1.06…
+$ inchh        <dbl+lbl> 8, 8, 8, 8, 8, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 3, 3, 3, 3, 3, 3, 3, 3, 8…
+$ inchh.std    <dbl> 1.1169, 1.1169, 1.1169, 1.1169, 1.1169, 1.1169, 1.1169, 1.1169, 0.2796, 0.279…
+$ gender       <dbl+lbl> 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0…
+$ female       <dbl> 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,…
+$ race         <dbl+lbl> 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1…
+$ white        <dbl> 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,…
+$ nfc          <dbl> 0.625, 0.625, 0.625, 0.625, 0.625, 0.625, 0.625, 0.625, 0.625, 0.625, 0.625, …
+$ nfa          <dbl> 0.6389, 0.6389, 0.6389, 0.6389, 0.6389, 0.6389, 0.6389, 0.6389, 0.5000, 0.500…
+$ pid          <dbl> 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -…
+$ pid.cat      <chr> "Republican voter", "Republican voter", "Republican voter", "Republican voter…
+$ psid         <dbl> 0.6471, 0.6471, 0.6471, 0.6471, 0.6471, 0.6471, 0.6471, 0.6471, -0.7647, -0.7…
+$ cue          <chr+lbl> "co", "co", "co", "co", "rs", "rs", "rs", "rs", "co", "co", "co", "co", "…
+$ aware        <dbl+lbl> 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0…
+$ treat.group  <chr+lbl> "G0 (aware)", "G0 (aware)", "G0 (aware)", "G0 (aware)", "G4", "G4", "G4",…
+$ policy       <chr+lbl> "gun", "elec", "admin", "min", "ocean", "fda", "tax", "care", "gun", "car…
+$ policy.group <chr+lbl> "1", "2", "2", "1", "2", "2", "1", "1", "1", "1", "2", "2", "2", "2", "1"…
+$ att          <dbl+lbl> 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1…
+$ mc1          <dbl+lbl>  3,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,  4,  4,  4,  4, NA, NA, N…
+$ mc2          <dbl+lbl> NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA,  2,  2,  …
+$ mc.prior     <chr> "none", "none", "none", "none", "none", "none", "none", "none", "none", "none…
+$ term         <chr> "completed", "completed", "completed", "completed", "completed", "completed",…
+$ disclaimer   <dbl+lbl> 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1…
+> 
+> ## * overview
+> 
+> cat("\n ------------ Checking (unique treat group) ------------\n")
+
+ ------------ Checking (unique treat group) ------------
+> df %>% group_by(policy, treat.group) %>% summarise(n=n())  %>% arrange(policy, treat.group)  %>%  print(n=100)
+# A tibble: 48 × 3
+# Groups:   policy [8]
+   policy                                                          treat.group                     n
+   <chr+lbl>                                                       <chr+lbl>                   <int>
+ 1 admin [Training period for adminitrative government staff]      G0 [Control]                  137
+ 2 admin [Training period for adminitrative government staff]      G0 (aware) [Control (aware…   135
+ 3 admin [Training period for adminitrative government staff]      G1 [Dem. Support/Rep. Oppo…   131
+ 4 admin [Training period for adminitrative government staff]      G2 [Dem. Support/Rep. Oppo…   121
+ 5 admin [Training period for adminitrative government staff]      G3 [Rep. Support/Dem. Oppo…   136
+ 6 admin [Training period for adminitrative government staff]      G4 [Rep. Support/Dem. Oppo…   138
+ 7 care [Health care]                                              G0 [Control]                  144
+ 8 care [Health care]                                              G0 (aware) [Control (aware…   126
+ 9 care [Health care]                                              G1 [Dem. Support/Rep. Oppo…   120
+10 care [Health care]                                              G2 [Dem. Support/Rep. Oppo…   138
+11 care [Health care]                                              G3 [Rep. Support/Dem. Oppo…   140
+12 care [Health care]                                              G4 [Rep. Support/Dem. Oppo…   130
+13 elec [Electronic filing systems for government agencies]        G0 [Control]                  144
+14 elec [Electronic filing systems for government agencies]        G0 (aware) [Control (aware…   134
+15 elec [Electronic filing systems for government agencies]        G1 [Dem. Support/Rep. Oppo…   135
+16 elec [Electronic filing systems for government agencies]        G2 [Dem. Support/Rep. Oppo…   130
+17 elec [Electronic filing systems for government agencies]        G3 [Rep. Support/Dem. Oppo…   125
+18 elec [Electronic filing systems for government agencies]        G4 [Rep. Support/Dem. Oppo…   130
+19 fda [Reallocate budget between from FDA and CPS]                G0 [Control]                  136
+20 fda [Reallocate budget between from FDA and CPS]                G0 (aware) [Control (aware…   123
+21 fda [Reallocate budget between from FDA and CPS]                G1 [Dem. Support/Rep. Oppo…   126
+22 fda [Reallocate budget between from FDA and CPS]                G2 [Dem. Support/Rep. Oppo…   122
+23 fda [Reallocate budget between from FDA and CPS]                G3 [Rep. Support/Dem. Oppo…   142
+24 fda [Reallocate budget between from FDA and CPS]                G4 [Rep. Support/Dem. Oppo…   149
+25 gun [Gun owner checks]                                          G0 [Control]                  133
+26 gun [Gun owner checks]                                          G0 (aware) [Control (aware…   131
+27 gun [Gun owner checks]                                          G1 [Dem. Support/Rep. Oppo…   138
+28 gun [Gun owner checks]                                          G2 [Dem. Support/Rep. Oppo…   124
+29 gun [Gun owner checks]                                          G3 [Rep. Support/Dem. Oppo…   133
+30 gun [Gun owner checks]                                          G4 [Rep. Support/Dem. Oppo…   139
+31 min [Minimum wage]                                              G0 [Control]                  114
+32 min [Minimum wage]                                              G0 (aware) [Control (aware…   133
+33 min [Minimum wage]                                              G1 [Dem. Support/Rep. Oppo…   148
+34 min [Minimum wage]                                              G2 [Dem. Support/Rep. Oppo…   120
+35 min [Minimum wage]                                              G3 [Rep. Support/Dem. Oppo…   142
+36 min [Minimum wage]                                              G4 [Rep. Support/Dem. Oppo…   141
+37 ocean [Increase budget for research institutes of oceanography] G0 [Control]                  134
+38 ocean [Increase budget for research institutes of oceanography] G0 (aware) [Control (aware…   137
+39 ocean [Increase budget for research institutes of oceanography] G1 [Dem. Support/Rep. Oppo…   135
+40 ocean [Increase budget for research institutes of oceanography] G2 [Dem. Support/Rep. Oppo…   127
+41 ocean [Increase budget for research institutes of oceanography] G3 [Rep. Support/Dem. Oppo…   135
+42 ocean [Increase budget for research institutes of oceanography] G4 [Rep. Support/Dem. Oppo…   130
+43 tax [Taxes on the rich]                                         G0 [Control]                  133
+44 tax [Taxes on the rich]                                         G0 (aware) [Control (aware…   135
+45 tax [Taxes on the rich]                                         G1 [Dem. Support/Rep. Oppo…   138
+46 tax [Taxes on the rich]                                         G2 [Dem. Support/Rep. Oppo…   137
+47 tax [Taxes on the rich]                                         G3 [Rep. Support/Dem. Oppo…   133
+48 tax [Taxes on the rich]                                         G4 [Rep. Support/Dem. Oppo…   122
+> 
+> cat("\n ------------ Checking (obs in long format by policy) ------------\n")
+
+ ------------ Checking (obs in long format by policy) ------------
+> df %>% group_by(treat.group) %>% summarise(n=n())  %>% print(n=100)
+# A tibble: 6 × 2
+  treat.group                               n
+  <chr+lbl>                             <int>
+1 G0 [Control]                           1075
+2 G0 (aware) [Control (aware)]           1054
+3 G1 [Dem. Support/Rep. Oppose]          1071
+4 G2 [Dem. Support/Rep. Oppose (aware)]  1019
+5 G3 [Rep. Support/Dem. Oppose]          1086
+6 G4 [Rep. Support/Dem. Oppose (aware)]  1079
+> 
+> cat("\n ------------ Checking (obs in long format by policy) ------------\n")
+
+ ------------ Checking (obs in long format by policy) ------------
+> df %>% group_by(policy) %>% summarise(n=n())  %>% print(n=100)
+# A tibble: 8 × 2
+  policy                                                              n
+  <chr+lbl>                                                       <int>
+1 admin [Training period for adminitrative government staff]        798
+2 care [Health care]                                                798
+3 elec [Electronic filing systems for government agencies]          798
+4 fda [Reallocate budget between from FDA and CPS]                  798
+5 gun [Gun owner checks]                                            798
+6 min [Minimum wage]                                                798
+7 ocean [Increase budget for research institutes of oceanography]   798
+8 tax [Taxes on the rich]                                           798
+> 
+> cat("\n ------------ Checking (unique treat group) ------------\n")
+
+ ------------ Checking (unique treat group) ------------
+> df %>% group_by(treat.group) %>% summarise(n=n())  %>% arrange(treat.group)  %>%  print(n=100)
+# A tibble: 6 × 2
+  treat.group                               n
+  <chr+lbl>                             <int>
+1 G0 [Control]                           1075
+2 G0 (aware) [Control (aware)]           1054
+3 G1 [Dem. Support/Rep. Oppose]          1071
+4 G2 [Dem. Support/Rep. Oppose (aware)]  1019
+5 G3 [Rep. Support/Dem. Oppose]          1086
+6 G4 [Rep. Support/Dem. Oppose (aware)]  1079
+> 
+> cat("\n ------------ Checking (unique obs) ------------\n")
+
+ ------------ Checking (unique obs) ------------
+> glue("Unique respondents: {df %>% distinct(rid, .keep_all=TRUE)  %>% nrow}") 
+Unique respondents: 798
+> glue("Long format (x8 policies): {df %>% nrow}") 
+Long format (x8 policies): 6384
+> glue("Long format divide by 8 (policies): {df %>% nrow/8}") 
+Long format divide by 8 (policies): 798
+> 
+> 
+> ## * --------     Main paper    ----------
+> ## * DONE Estimation
+> ## ** DONE separately by policy
+> 
+> ## Note: The estimation is repeated using different reference groups,
+> ##   G0 and G0 (aware)
+> 
+> plan(multisession, workers = parallel::detectCores()-2)
+Setting theme "Compact"
+Setting theme "language: en"
+Setting theme "Exploratory Data Analysis"
+Setting theme "Compact"
+Setting theme "language: en"
+Setting theme "Compact"
+Setting theme "Exploratory Data Analysis"
+
+- Settings loaded...
+Setting theme "language: en"
+Setting theme "Exploratory Data Analysis"
+
+- Settings loaded...
+Setting theme "Compact"
+Setting theme "Compact"
+Setting theme "language: en"
+Setting theme "language: en"
+Setting theme "Exploratory Data Analysis"
+
+- Settings loaded...
+Setting theme "Exploratory Data Analysis"
+
+- Settings loaded...
+Setting theme "Compact"
+Setting theme "Compact"
+Setting theme "language: en"
+Setting theme "language: en"
+Setting theme "Exploratory Data Analysis"
+Setting theme "Exploratory Data Analysis"
+
+- Settings loaded...
+
+- Settings loaded...
+> res.pp = (
++     df    
++     %>% nest(-policy)  
++     %>% crossing(pid = c('pid', 'psid')) 
++     %>% crossing(covars = list(1, CONTROLS))   
++     %>% crossing(ref=c('G0', 'G0 (aware)'))
++     %>% rowwise(.)
++     %>% mutate(formula = glue("att ~ {pid}*treat.group + {get_controls(covars)}"))  
++     %>% ungroup(.) 
++     %>% mutate(
++             ncovars = future_map_dbl(.x=covars, function(.x) length(.x)-1),
++             fit     = future_pmap(list(formula, data, pid, ref), function(formula, data, pid, ref)
++                 estimate(formula, data, pid, ref)
++                 ),
++             )  
++     %>% unnest(fit)
++ )
+Registered S3 methods overwritten by 'broom':
+  method            from  
+  tidy.glht         jtools
+  tidy.summary.glht jtools
+Registered S3 methods overwritten by 'broom':
+  method            from  
+  tidy.glht         jtools
+  tidy.summary.glht jtools
+Registered S3 methods overwritten by 'broom':
+  method            from  
+  tidy.glht         jtools
+  tidy.summary.glht jtools
+Registered S3 methods overwritten by 'broom':
+  method            from  
+  tidy.glht         jtools
+  tidy.summary.glht jtools
+Registered S3 methods overwritten by 'broom':
+  method            from  
+  tidy.glht         jtools
+  tidy.summary.glht jtools
+Registered S3 methods overwritten by 'broom':
+  method            from  
+  tidy.glht         jtools
+  tidy.summary.glht jtools
+> plan(sequential)
+> res.pp
+# A tibble: 64 × 11
+  policy                data     pid   covars ref   formula ncovars fit   summ     glance   pred    
+  <chr+lbl>             <list>   <chr> <list> <chr> <glue>    <dbl> <lis> <list>   <list>   <list>  
+1 admin [Training peri… <tibble> pid   <dbl>  G0    att ~ …       0 <glm> <tibble> <tibble> <tibble>
+2 admin [Training peri… <tibble> pid   <dbl>  G0 (… att ~ …       0 <glm> <tibble> <tibble> <tibble>
+3 admin [Training peri… <tibble> pid   <chr>  G0    att ~ …       6 <glm> <tibble> <tibble> <tibble>
+4 admin [Training peri… <tibble> pid   <chr>  G0 (… att ~ …       6 <glm> <tibble> <tibble> <tibble>
+5 admin [Training peri… <tibble> psid  <dbl>  G0    att ~ …       0 <glm> <tibble> <tibble> <tibble>
+6 admin [Training peri… <tibble> psid  <dbl>  G0 (… att ~ …       0 <glm> <tibble> <tibble> <tibble>
+# ℹ 58 more rows
+> 
+> 
+> ## ** DONE difference-in-differences
+> 
+> res.did = (
++     res.pp  
++     %>% filter(ref=='G0') 
++     %>% mutate(did = future_map2(.x=fit, .y=pid, function(fit=.x, pid=.y) estimate.did(fit, pid))) 
++     %>% unnest(did)
++ )
+> ## res.did %>% glimpse()
+> 
+> ## checking 
+> ## --------
+> cat("\n ------------ Checking (DiD computation) ------------\n")
+
+ ------------ Checking (DiD computation) ------------
+> check_did(res.did, cue='ds', row=3)
+
+ ------------ Checking (manual check Did) ------------
+
+--------------- Computed: ---------------
+               [,1]                                                                        
+policy         "admin"                                                                     
+data           tbl_df,26                                                                   
+pid            "psid"                                                                      
+covars         1                                                                           
+ref            "G0"                                                                        
+formula        "att ~ psid*treat.group + 1"                                                
+ncovars        0                                                                           
+fit            glm,31                                                                      
+summ           tbl_df,7                                                                    
+glance         tbl_df,8                                                                    
+pred           tbl_df,5                                                                    
+cue            "ds"                                                                        
+test           "(psid:treat.groupG1) - (psid:treat.groupG2 - `psid:treat.groupG0 (aware)`)"
+estimate       0.8342                                                                      
+std.error      0.711                                                                       
+statistic      1.173                                                                       
+p.value        0.2407                                                                      
+conf.low       -0.5593                                                                     
+conf.high      2.228                                                                       
+label          "(G1) - (G2 - G0 (aware))"                                                  
+PxG1           -0.3312                                                                     
+PxG2           -0.2336                                                                     
+PxG3           1.762                                                                       
+PxG4           1.749                                                                       
+PxG2 (aware)   -1.165                                                                      
+PxG4 (aware)   0.817                                                                       
+PxG0 (aware)   0.9319                                                                      
+baseline.group "G1"                                                                        
+aware.group    "G2"                                                                        
+PxCue          -0.3312                                                                     
+PxCue.aware    -1.165                                                                      
+did            0.8342                                                                      
+change         251.9                                                                       
+stars          ""                                                                          
+did.label      "0.83 (-0.56, 2.23)"                                                        
+change.arrow   "0"                                                                         
+change.label   "251.9\\% (0)"                                                              
+
+--------------- Replication: ---------------
+# A tibble: 1 × 8
+  lhs                                    rhs estimate std.error statistic p.value conf.low conf.high
+  <chr>                                <dbl>    <dbl>     <dbl>     <dbl>   <dbl>    <dbl>     <dbl>
+1 (psid:treat.groupG1) - (psid:treat.…     0    0.834     0.711      1.17   0.241   -0.559      2.23
+
+---------------Manual check:---------------
+
+Model with G0 as reference:
+              [,1]
+G0 (aware)  0.9319
+P x G1     -0.3312
+P x G2     -0.2336
+
+Model with G0 (aware) as reference:
+          [,1]
+P x G1 -1.2631
+P x G2 -1.1655
+G0     -0.9319
+
+Same reg, subtracting the Aware effect:
+psid:treat.groupG1 
+            0.8342 
+
+Using 2 reg with different reference groups:
+psid:treat.groupG1 
+            0.8342 
+> check_did(res.did, cue='rs', row=6)
+
+ ------------ Checking (manual check Did) ------------
+
+--------------- Computed: ---------------
+               [,1]                                                                                 
+policy         "care"                                                                               
+data           tbl_df,26                                                                            
+pid            "pid"                                                                                
+covars         character,7                                                                          
+ref            "G0"                                                                                 
+formula        "att ~ pid*treat.group + educ.std + age.std + inchh.std + white + female + nfc + nfa"
+ncovars        6                                                                                    
+fit            glm,31                                                                               
+summ           tbl_df,7                                                                             
+glance         tbl_df,8                                                                             
+pred           tbl_df,12                                                                            
+cue            "rs"                                                                                 
+test           "(pid:treat.groupG3) - (pid:treat.groupG4 - `pid:treat.groupG0 (aware)`)"            
+estimate       -0.4739                                                                              
+std.error      0.6571                                                                               
+statistic      -0.7213                                                                              
+p.value        0.4707                                                                               
+conf.low       -1.762                                                                               
+conf.high      0.8139                                                                               
+label          "(G3) - (G4 - G0 (aware))"                                                           
+PxG1           -0.4517                                                                              
+PxG2           -0.6598                                                                              
+PxG3           1.201                                                                                
+PxG4           1.291                                                                                
+PxG2 (aware)   -0.276                                                                               
+PxG4 (aware)   1.675                                                                                
+PxG0 (aware)   -0.3838                                                                              
+baseline.group "G3"                                                                                 
+aware.group    "G4"                                                                                 
+PxCue          1.201                                                                                
+PxCue.aware    1.675                                                                                
+did            -0.4739                                                                              
+change         39.46                                                                                
+stars          ""                                                                                   
+did.label      "-0.47 (-1.76, 0.81)"                                                                
+change.arrow   "0"                                                                                  
+change.label   "39.5\\% (0)"                                                                        
+
+--------------- Replication: ---------------
+# A tibble: 1 × 8
+  lhs                                    rhs estimate std.error statistic p.value conf.low conf.high
+  <chr>                                <dbl>    <dbl>     <dbl>     <dbl>   <dbl>    <dbl>     <dbl>
+1 (pid:treat.groupG3) - (pid:treat.gr…     0   -0.474     0.657    -0.721   0.471    -1.76     0.814
+
+---------------Manual check:---------------
+
+Model with G0 as reference:
+              [,1]
+G0 (aware) -0.3838
+P x G3      1.2009
+P x G4      1.2911
+
+Model with G0 (aware) as reference:
+         [,1]
+P x G3 1.5847
+P x G4 1.6749
+G0     0.3838
+
+Same reg, subtracting the Aware effect:
+pid:treat.groupG3 
+          -0.4739 
+
+Using 2 reg with different reference groups:
+pid:treat.groupG3 
+          -0.4739 
+> 
+> 
+> ## ** DONE pooled across policies and cue type (outcome: policy support)
+> 
+> cat("\n\nEstimating hierarchical model. This may take a while...")
+
+
+Estimating hierarchical model. This may take a while...> f = glue("att ~ pid.cat*cue*aware",
++          " + (1 + cue*aware | policy)",
++          " + (1 | rid)")
+> res.agg = (
++     tibble(covars = list(1, CONTROLS))   
++     %>% rowwise(.)
++     %>% mutate(formula = glue("{f} + {get_controls(covars)}"))   
++     %>% crossing(model=c('lpm', 'logistic')) 
++     %>% ungroup(.) 
++     %>% mutate(
++             ncovars = future_map_dbl(.x=covars, function(.x) length(.x)-1),
++             fit = future_map2(.x=formula, .y=model, function(.x, .y)
++                 if (.y=='lpm')
++                 {
++                     lmer(.x,
++                          data=df %>% as_label(aware, pid.cat))
++                 }else {
++                     glmer(.x,
++                           data=df %>% as_label(aware, pid.cat),
++                           family='binomial')
++                 }),
++             summ = future_map(.x=fit, function(.x) tidy(.x, conf.int=TRUE)),
++             glance = future_map(.x=fit, function(.x) glance(.x)),
++             pred = future_pmap(list(fit), function(fit)
++                 predictions(fit, by=c('aware', 'pid.cat', 'cue')
++                             )
++                 )
++         )
++ )
+boundary (singular) fit: see help('isSingular')
+boundary (singular) fit: see help('isSingular')
+> ## res.agg 
+> cat("done!\n\n")
+done!
+
+> 
+> ## * DONE Interim analysis (stopping rule check)
+> 
+> ref = 'G0'
+> tab= (
++     res.pp
++     %>% filter(ref==!!ref)  
++     %>% filter(pid=="pid") 
++     %>% select(policy, summ) 
++     %>% unnest(summ) 
++     %>% filter(str_detect(term, pattern=":"))   
++     %>% mutate('Significant at alpha=0.05' = ifelse(p.value<0.05, "Yes", 'No') )
++ )
+> tab %>% sjmisc::frq("Significant at alpha=0.05")
+Significant at alpha=0.05 <character> 
+# total N=80 valid N=80 mean=1.51 sd=0.50
+
+Value |  N | Raw % | Valid % | Cum. %
+-------------------------------------
+No    | 39 | 48.75 |   48.75 |  48.75
+Yes   | 41 | 51.25 |   51.25 | 100.00
+<NA>  |  0 |  0.00 |    <NA> |   <NA>
+> 
+> ## * DONE Tables
+> ## ** Table 3
+> 
+> table='tab-3'
+> ## 
+> ## table
+> ## -----
+> terms <- c(
++     "(Intercept)"                               = "Dem. voter (baseline)",
++     "awareAware"				= "Dem. voter x Aware",
++     "cueds"					= "Dem. voter x Dem. support cue",
++     "cueds:awareAware"				= "Dem. voter x Dem. support cue x Aware",
++     "cuers"					= "Dem. voter x Rep. support cue",
++     "cuers:awareAware"				= "Dem. voter x Rep. support cue x Aware",
++     "pid.catRepublican voter"			= "Rep. voter",
++     "pid.catRepublican voter:awareAware"	= "Rep. voter x Aware",
++     "pid.catRepublican voter:cueds"		= "Rep. voter x Dem. support cue",
++     "pid.catRepublican voter:cueds:awareAware"	= "Rep. voter x Dem. support cue x Aware",
++     "pid.catRepublican voter:cuers"		= "Rep. voter x Rep. support cue",
++     "pid.catRepublican voter:cuers:awareAware"	= "Rep. voter x Rep. support cue x Aware"
++ )
+> res.agg = res.agg %>% mutate(ncovars.label = case_when(ncovars==0~"Unadjusted", T~'Adjusted\\tnote{a}')) 
+> mods = res.agg %>% filter(model=='lpm') %>% pull(fit)
+> names(mods) = res.agg %>% filter(model=='lpm') %>% pull(ncovars.label)
+> tab = (
++     modelsummary(mods,
++                    estimate  = "{estimate}{stars} ({conf.low}, {conf.high})",
++                    statistic=NULL,
++                    stars=TRUE,
++                    vcov = 'classical', 
++                    ## 
++                    coef_omit = "SD|Cor",
++                    gof_omit = 'Errors|F|RMSE|AIC|BIC', 
++                    coef_map=terms,
++                    output='data.frame',
++                    )%>% 
++     select(-part, -statistic)%>% 
++     mutate(term = ifelse(lag(term)==term & !is.na(lag(term)), "", term),
++            term = str_replace_all(string=term, pattern=':', replacement=' x '))
++ )
+> tab
+                                    term                 Unadjusted         Adjusted\\tnote{a}
+1                  Dem. voter (baseline)    0.853*** (0.771, 0.935)    0.720*** (0.598, 0.841)
+2                     Dem. voter x Aware     -0.024 (-0.072, 0.024)     -0.023 (-0.071, 0.025)
+3          Dem. voter x Dem. support cue      0.052* (0.003, 0.100)      0.052* (0.006, 0.098)
+4  Dem. voter x Dem. support cue x Aware      0.005 (-0.056, 0.065)      0.005 (-0.056, 0.067)
+5          Dem. voter x Rep. support cue -0.202*** (-0.259, -0.146) -0.201*** (-0.259, -0.143)
+6  Dem. voter x Rep. support cue x Aware     0.060+ (-0.008, 0.129)      0.061 (-0.012, 0.133)
+7                             Rep. voter -0.239*** (-0.302, -0.177) -0.245*** (-0.308, -0.183)
+8                     Rep. voter x Aware      0.004 (-0.083, 0.092)      0.000 (-0.087, 0.088)
+9          Rep. voter x Dem. support cue -0.260*** (-0.338, -0.182) -0.258*** (-0.336, -0.180)
+10 Rep. voter x Dem. support cue x Aware     -0.040 (-0.151, 0.072)     -0.041 (-0.152, 0.071)
+11         Rep. voter x Rep. support cue    0.304*** (0.225, 0.384)    0.306*** (0.227, 0.386)
+12 Rep. voter x Rep. support cue x Aware   -0.138* (-0.249, -0.026)   -0.143* (-0.255, -0.032)
+13                              Num.Obs.                       5349                       5349
+14                              R2 Marg.                      0.151                      0.159
+> ## 
+> 
+> ## latex
+> ## -----
+> caption = glue('\\label{{{table}}}Adjusted and unadjusted linear probability model',
++                ' estimates of the effect',
++                " of the treatment conditions on partisans' policy support.",
++                " Random effects used at policy and respondent levels.",
++                ' The 95\\% confidence intervals of the estimates are shown in parenthesis.',
++                " The reference groups are Democratic voters under no party ",
++                " cue and no awareness exposure."
++                )
+> pvalues = glue("\\\\footnotesize  + p $<$ 0.1, * p $<$ 0.05, ** p $<$ 0.01, *** p $<$ 0.001\\\\\\\\")
+> controls = glue_collapse(unlist(LABELS.VARS[CONTROLS]), ", ")
+> controls = glue("Adjustment variables: {controls}")
+> tabl = (
++     tab
++     %>% rename(' '=term) 
++     %>% kable(., "latex", booktabs = T, caption=caption,
++               escape=F,
++               align=c("l", rep("r", ncol(.)-1)),
++               digits=4, longtable = F, table.envir = "table",
++               linesep = NULL) 
++     %>% kable_styling(latex_options = c("scale_down", "repeat_header"),
++                       position = "center", font_size=NULL)  
++     %>% footnote(
++             general	      = pvalues,
++             general_title     = "", ## title of the general legend
++             threeparttable    = T,
++             escape            = F,
++             alphabet	      = c(a = controls),
++             footnote_as_chunk = F,  # F means fotenotes are spread in multiple lines
++             title_format      = c("italic")
++         ) 
++ )
+> tabl
+\begin{table}
+\centering
+\caption{\label{tab-3}Adjusted and unadjusted linear probability model estimates of the effect of the treatment conditions on partisans' policy support. Random effects used at policy and respondent levels. The 95\% confidence intervals of the estimates are shown in parenthesis. The reference groups are Democratic voters under no party  cue and no awareness exposure.}
+\centering
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
+\begin{threeparttable}
+\begin{tabular}[t]{lrr}
+\toprule
+  & Unadjusted & Adjusted\tnote{a}\\
+\midrule
+Dem. voter (baseline) & 0.853*** (0.771, 0.935) & 0.720*** (0.598, 0.841)\\
+Dem. voter x Aware & -0.024 (-0.072, 0.024) & -0.023 (-0.071, 0.025)\\
+Dem. voter x Dem. support cue & 0.052* (0.003, 0.100) & 0.052* (0.006, 0.098)\\
+Dem. voter x Dem. support cue x Aware & 0.005 (-0.056, 0.065) & 0.005 (-0.056, 0.067)\\
+Dem. voter x Rep. support cue & -0.202*** (-0.259, -0.146) & -0.201*** (-0.259, -0.143)\\
+Dem. voter x Rep. support cue x Aware & 0.060+ (-0.008, 0.129) & 0.061 (-0.012, 0.133)\\
+Rep. voter & -0.239*** (-0.302, -0.177) & -0.245*** (-0.308, -0.183)\\
+Rep. voter x Aware & 0.004 (-0.083, 0.092) & 0.000 (-0.087, 0.088)\\
+Rep. voter x Dem. support cue & -0.260*** (-0.338, -0.182) & -0.258*** (-0.336, -0.180)\\
+Rep. voter x Dem. support cue x Aware & -0.040 (-0.151, 0.072) & -0.041 (-0.152, 0.071)\\
+Rep. voter x Rep. support cue & 0.304*** (0.225, 0.384) & 0.306*** (0.227, 0.386)\\
+Rep. voter x Rep. support cue x Aware & -0.138* (-0.249, -0.026) & -0.143* (-0.255, -0.032)\\
+Num.Obs. & 5349 & 5349\\
+R2 Marg. & 0.151 & 0.159\\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\item \footnotesize  + p $<$ 0.1, * p $<$ 0.05, ** p $<$ 0.01, *** p $<$ 0.001\\
+\item[a] Adjustment variables: Education (std), Age (std), Income (std), Race (white), Gender (female), Need for cognition, Need for accuracy
+\end{tablenotes}
+\end{threeparttable}}
+\end{table}
+> 
+> ##
+> if (SAVE) {
++     cat(glue("Saving {table}...") )
++     fn = file.path(PATH_MAN_TABLES, glue("{table}"))
++     write.table(x=tab, file=glue("{fn}.csv") , row.names=F, sep=';')
++     write_xlsx(x=tab, path=glue("{fn}.xlsx"))
++     writeLines(text=tabl, glue("{fn}.tex"))
++     cat("done!\n")
++ }
+Saving tab-3...done!
+> 
+> 
+> ## for reporting in the paper
+> ## --------------------------
+> ncovars = 0
+> mods = res.agg %>% filter(model=='lpm') %>% filter(ncovars==!!ncovars) %>% pull(fit)
+> tab.report = (
++     modelsummary(mods,
++                  ## estimate = glue("{{estimate}} ([{{conf.low}}, {{conf.high}}];",
++                  ##                 " p-value={{p.value}}) {{stars}}"),
++                  estimate = glue("{{estimate}} ; {{conf.low}} ; {{conf.high}};",
++                                  " {{p.value}} ;  {{stars}}"),
++                  statistic=NULL, stars=TRUE, 
++                  vcov = 'classical', coef_omit = "SD|Cor",
++                  coef_map=terms, gof_omit = '.', output='data.frame')
++ )
+> tab.report 
+        part                                  term statistic                                     (1)
+1  estimates                 Dem. voter (baseline)  estimate    0.853 ; 0.771 ; 0.935; <0.001 ;  ***
+2  estimates                    Dem. voter x Aware  estimate        -0.024 ; -0.072 ; 0.024; 0.330 ;
+3  estimates         Dem. voter x Dem. support cue  estimate       0.052 ; 0.003 ; 0.100; 0.037 ;  *
+4  estimates Dem. voter x Dem. support cue x Aware  estimate         0.005 ; -0.056 ; 0.065; 0.875 ;
+5  estimates         Dem. voter x Rep. support cue  estimate -0.202 ; -0.259 ; -0.146; <0.001 ;  ***
+6  estimates Dem. voter x Rep. support cue x Aware  estimate      0.060 ; -0.008 ; 0.129; 0.085 ;  +
+7  estimates                            Rep. voter  estimate -0.239 ; -0.302 ; -0.177; <0.001 ;  ***
+8  estimates                    Rep. voter x Aware  estimate         0.004 ; -0.083 ; 0.092; 0.921 ;
+9  estimates         Rep. voter x Dem. support cue  estimate -0.260 ; -0.338 ; -0.182; <0.001 ;  ***
+10 estimates Rep. voter x Dem. support cue x Aware  estimate        -0.040 ; -0.151 ; 0.072; 0.484 ;
+11 estimates         Rep. voter x Rep. support cue  estimate    0.304 ; 0.225 ; 0.384; <0.001 ;  ***
+12 estimates Rep. voter x Rep. support cue x Aware  estimate    -0.138 ; -0.249 ; -0.026; 0.016 ;  *
+> 
+> (
++     tab.report %>% 
++     select(-part, -statistic)%>% 
++     mutate(term = ifelse(lag(term)==term & !is.na(lag(term)), "", term),
++            term = str_replace_all(string=term, pattern=':', replacement=' x '))
++     %>% separate(., col="(1)",
++                  into=c("estimate", "conf.low", 'conf.high', 'p.value', 'stars'), sep=";")  
++     %>% mutate(estimate= 100*as.numeric(estimate),
++                conf.low = 100*as.numeric(conf.low),
++                conf.high= 100*as.numeric(conf.high),
++                p.value.eq = case_when(str_detect(p.value, pattern="<")~"$<$", T~"="),
++                p.value = str_trim(p.value) %>%
++                    str_replace_all(string=., pattern="<", replacement="") ,
++                stars = str_trim(stars),
++                ##
++                estimate = glue("{estimate} ([{conf.low}, {conf.high}];",
++                                  " p-value {p.value.eq} {p.value})")
++                ) 
++     %>% tibble()  
++     %>% select(term, estimate)
++ )%>% print(., n=Inf, width=Inf) 
+# A tibble: 12 × 2
+   term                                  estimate                                 
+   <chr>                                 <glue>                                   
+ 1 Dem. voter (baseline)                 85.3 ([77.1, 93.5]; p-value $<$ 0.001)   
+ 2 Dem. voter x Aware                    -2.4 ([-7.2, 2.4]; p-value = 0.330)      
+ 3 Dem. voter x Dem. support cue         5.2 ([0.3, 10]; p-value = 0.037)         
+ 4 Dem. voter x Dem. support cue x Aware 0.5 ([-5.6, 6.5]; p-value = 0.875)       
+ 5 Dem. voter x Rep. support cue         -20.2 ([-25.9, -14.6]; p-value $<$ 0.001)
+ 6 Dem. voter x Rep. support cue x Aware 6 ([-0.8, 12.9]; p-value = 0.085)        
+ 7 Rep. voter                            -23.9 ([-30.2, -17.7]; p-value $<$ 0.001)
+ 8 Rep. voter x Aware                    0.4 ([-8.3, 9.2]; p-value = 0.921)       
+ 9 Rep. voter x Dem. support cue         -26 ([-33.8, -18.2]; p-value $<$ 0.001)  
+10 Rep. voter x Dem. support cue x Aware -4 ([-15.1, 7.2]; p-value = 0.484)       
+11 Rep. voter x Rep. support cue         30.4 ([22.5, 38.4]; p-value $<$ 0.001)   
+12 Rep. voter x Rep. support cue x Aware -13.8 ([-24.9, -2.6]; p-value = 0.016)   
+> 
+> ## * DONE Figures
+> ## ** DONE Figure 1
+> 
+> figure = 'fig-1'
+> ## 
+> tab = (
++     df  
++     %>% group_by(policy, pid.cat, treat.group) 
++     %>% summarise(n=n(),
++                   p=mean(att, na.rm=T)) 
++     %>% mutate(
++             aware = case_when(str_detect(treat.group, pattern="aware")~1, T~0),
++             x = treat.group %>% factor(.,
++                                        c('G1',
++                                          'G2',
++                                          'G0',
++                                          'G0 (aware)',
++                                          'G3',
++                                          'G4'),
++                                        c('Dem. Support',
++                                          'Dem. Support',
++                                          'Control',
++                                          'Control',
++                                          'Rep. Support',
++                                          'Rep. Support')
++                                        ), 
++             treat.group = treat.group %>% sjlabelled::as_label(.),
++             pid.cat = case_when(
++                 str_detect(treat.group, pattern="aware") ~ glue("{pid.cat} (aware)"),
++                 !str_detect(treat.group, pattern="aware") ~ glue("{pid.cat} (not aware)"),
++                 ),
++             pid.cat = factor(pid.cat, levels=c("Democratic voter (not aware)",
++                                                "Democratic voter (aware)",
++                                                "Republican voter (not aware)",
++                                                "Republican voter (aware)"
++                                       ))
++         )
++     %>% left_join(., df %>%
++                      select(policy, policy.group) %>%
++                      distinct(., .keep_all=TRUE) , by=c('policy')) 
++     %>% mutate(policy= factor(policy,
++                               LABELS.VALUES[['policy.short']],
++                               names(LABELS.VALUES[['policy.short']])))
++ )
+> tab
+# A tibble: 96 × 8
+# Groups:   policy, pid.cat [32]
+  policy             pid.cat                      treat.group       n     p aware x     policy.group
+  <fct>              <fct>                        <fct>         <int> <dbl> <dbl> <fct> <chr+lbl>   
+1 Training for staff Democratic voter (not aware) Control          87 0.776     0 Cont… 2 [Low-sali…
+2 Training for staff Democratic voter (aware)     Control (awa…    89 0.658     1 Cont… 2 [Low-sali…
+3 Training for staff Democratic voter (not aware) Dem. Support…    95 0.846     0 Dem.… 2 [Low-sali…
+4 Training for staff Democratic voter (aware)     Dem. Support…    92 0.765     0 Dem.… 2 [Low-sali…
+5 Training for staff Democratic voter (not aware) Rep. Support…   106 0.358     0 Rep.… 2 [Low-sali…
+6 Training for staff Democratic voter (aware)     Rep. Support…    93 0.492     0 Rep.… 2 [Low-sali…
+# ℹ 90 more rows
+> ## 
+> x = "x"
+> y = "p"
+> color    = NULL
+> fill     = 'pid.cat'
+> facet1   = 'policy'
+> facet2   = 'policy.group'
+> leg      = NULL
+> title    = NULL
+> subtitle = NULL
+> caption  = NULL
+> dodge    = .1
+> ylab     = "Percentage in favor of the policy"
+> xlab     = "Party cue"
+> dodge=c(1, 2, .05, .3)
+> dodge=.1
+> shape=fill
+> colors.pid = c(
++     "Democratic voter (not aware)" = 'blue',
++     "Democratic voter (aware)"     = 'lightblue',
++     "Republican voter (not aware)" = 'red',
++     "Republican voter (aware)"     = 'pink'
++ )
+> g = (
++     tab 
++     %>% ggplot(.) 
++     + geom_line(aes_string(x=x, y=y, group=fill,
++                            linetype=fill,
++                            color=fill),
++                 position = position_dodge(dodge),
++                 size=.6
++                 )
++     + geom_point(aes_string(x=x, y=y, fill=fill, shape=fill),
++                  position = position_dodge(dodge),
++                  size=3,
++                  )
++     + scale_x_discrete(labels = scales::wrap_format(10))
++     + scale_y_continuous(expand = expansion(mult = c(0, 0)), limits=c(0, 1.2),
++                          labels = percent_format(scale=100)) 
++     + scale_shape_manual(values=c(21, 21, 22, 22))
++     ## + scale_fill_manual(values = colors.pid ) 
++     ## + scale_color_manual(values = colors.pid) 
++     + scale_linetype_manual(values=c(1,2,1,2))
++     + scale_fill_grey(start = 0, end = .7, na.value="red") 
++     + scale_colour_grey(start = 0, end = .7, na.value="red") 
++     + facet_wrap(glue("~ {facet1}"), ncol = 4)
++     + labs(
++           x        = xlab,
++           y        = ylab,
++           color    = leg, 
++           fill     = leg,
++           linetype = leg,
++           shape    = leg,
++           title    = title,
++           subtitle = subtitle,
++           caption  = caption
++       )
++     + ggguides(ncol=2)
++     + ggtheme2()
++     + theme(strip.text.x = element_text(size=9, face='bold.italic', hjust=0),
++             strip.text.y = element_text(size=9, face="bold", vjust=0)) 
++ )
+> g
+> 
+> if (SAVE){save.figure(g, tab, PATH_MAN_FIGURES, figure, 9, 5)}
+
+Saving table of figure fig-1...done!
+Saving figure fig-1...done!
+> 
+> 
+> ## * -------- Online supplement ----------
+> ## * Estimation
+> ## ** DONE Manipulation checks
+> ## *** DONE Manipulation checks
+> 
+> y=c('mc1', 'mc2')
+> df.unique = (
++     df 
++     %>% distinct(rid, .keep_all=TRUE)  
++     %>% select(aware, mc.prior, mc1, mc2, CONTROLS)
++ )
+> res.mc = (
++     df.unique 
++     %>% nest(-mc.prior)  
++     %>% crossing(y=y) 
++     %>% bind_rows( 
++             tibble(mc.prior='either',
++                    data=list(df.unique))  
++             %>% crossing(y=y) 
++         )
++     %>% crossing(covars  = list(1, CONTROLS))  
++     %>% rowwise(.)
++     %>% mutate(f = case_when(mc.prior!='either' ~ glue("{y}~aware+ {get_controls(covars)}"),
++                              mc.prior=='either' ~ glue("{y}~aware+ {get_controls(covars)} + ",
++                                                        "(1 | mc.prior)")) ,
++                ncovars = length(covars)) 
++     %>% ungroup(.) 
++     %>% mutate(
++             adj = ifelse(ncovars>1, "Yes", 'No'),
++             fit = future_pmap(list(f=f, mc.prior=mc.prior, data=data), function(f, mc.prior, data)
++                 ifelse(mc.prior=='either', list(lmer(f, data=data)), list(lm(f, data=data)))[[1]]),
++             n = future_map_int(.x=fit, function(.x) nrow(model.frame(.x))),
++             summ = future_map(.x=fit, function(.x) tidy(.x, conf.int = T))
++         )
++ ) %>% print(., n=Inf) 
+# A tibble: 16 × 10
+   mc.prior data                y     covars    f             ncovars adj   fit           n summ    
+   <chr>    <list>              <chr> <list>    <glue>          <int> <chr> <list>    <int> <list>  
+ 1 either   <tibble [798 × 11]> mc1   <dbl [1]> mc1~aware+ 1…       1 No    <lmerMod>   595 <tibble>
+ 2 either   <tibble [798 × 11]> mc1   <chr [7]> mc1~aware+ e…       7 Yes   <lmerMod>   595 <tibble>
+ 3 either   <tibble [798 × 11]> mc2   <dbl [1]> mc2~aware+ 1…       1 No    <lmerMod>   599 <tibble>
+ 4 either   <tibble [798 × 11]> mc2   <chr [7]> mc2~aware+ e…       7 Yes   <lmerMod>   599 <tibble>
+ 5 mc1      <tibble [198 × 10]> mc1   <dbl [1]> mc1~aware+ 1        1 No    <lm>        198 <tibble>
+ 6 mc1      <tibble [198 × 10]> mc1   <chr [7]> mc1~aware+ e…       7 Yes   <lm>        198 <tibble>
+ 7 mc1      <tibble [198 × 10]> mc2   <dbl [1]> mc2~aware+ 1        1 No    <lm>        198 <tibble>
+ 8 mc1      <tibble [198 × 10]> mc2   <chr [7]> mc2~aware+ e…       7 Yes   <lm>        198 <tibble>
+ 9 mc2      <tibble [198 × 10]> mc1   <dbl [1]> mc1~aware+ 1        1 No    <lm>        198 <tibble>
+10 mc2      <tibble [198 × 10]> mc1   <chr [7]> mc1~aware+ e…       7 Yes   <lm>        198 <tibble>
+11 mc2      <tibble [198 × 10]> mc2   <dbl [1]> mc2~aware+ 1        1 No    <lm>        198 <tibble>
+12 mc2      <tibble [198 × 10]> mc2   <chr [7]> mc2~aware+ e…       7 Yes   <lm>        198 <tibble>
+13 none     <tibble [402 × 10]> mc1   <dbl [1]> mc1~aware+ 1        1 No    <lm>        199 <tibble>
+14 none     <tibble [402 × 10]> mc1   <chr [7]> mc1~aware+ e…       7 Yes   <lm>        199 <tibble>
+15 none     <tibble [402 × 10]> mc2   <dbl [1]> mc2~aware+ 1        1 No    <lm>        203 <tibble>
+16 none     <tibble [402 × 10]> mc2   <chr [7]> mc2~aware+ e…       7 Yes   <lm>        203 <tibble>
+> 
+> ## *** DONE Manipulation checks (MC stacked)
+> 
+> tab = (
++     df 
++     %>% distinct(rid, .keep_all=TRUE) 
++     %>% select(rid, aware, mc.prior, mc1, mc2, CONTROLS, pid.cat)
++     %>% filter(mc.prior!='none') 
++     %>% pivot_longer(c('mc1', 'mc2'), names_to='mc', values_to="mc.value") 
++     %>% mutate(mc = relevel(factor(mc), ref='mc2'))
++ )
+> tab
+# A tibble: 792 × 13
+  rid    aware   mc.prior educ.std age.std inchh.std white female   nfc   nfa pid.cat mc    mc.value
+  <chr>  <dbl+l> <chr>       <dbl>   <dbl>     <dbl> <dbl>  <dbl> <dbl> <dbl> <chr>   <fct> <dbl+lb>
+1 R_5QW… 0 [Not… mc1        -0.129   0.652     1.12      1      0 0.575 0.611 Democr… mc1   3 [Neit…
+2 R_5QW… 0 [Not… mc1        -0.129   0.652     1.12      1      0 0.575 0.611 Democr… mc2   3 [Neit…
+3 R_2ri… 0 [Not… mc2        -0.129   0.959    -0.558     1      1 0.6   0.75  Republ… mc1   4 [Agre…
+4 R_2ri… 0 [Not… mc2        -0.129   0.959    -0.558     1      1 0.6   0.75  Republ… mc2   4 [Agre…
+5 R_13m… 0 [Not… mc2        -0.129   1.27     -0.139     1      1 0.525 0.667 Democr… mc1   4 [Agre…
+6 R_13m… 0 [Not… mc2        -0.129   1.27     -0.139     1      1 0.525 0.667 Democr… mc2   4 [Agre…
+# ℹ 786 more rows
+> ## 
+> mod1 = lmer(glue("mc.value ~ aware  + (1| mc)"), data=tab)
+boundary (singular) fit: see help('isSingular')
+> mod2 = lmer(glue("mc.value ~ aware + {get_controls(CONTROLS)} + (1| mc)"), data=tab)
+boundary (singular) fit: see help('isSingular')
+> mod3 = lm(glue("mc.value ~ aware*mc"), data=tab)
+> mod4 = lm(glue("mc.value ~ aware*mc+ {get_controls(CONTROLS)}"), data=tab)
+> mod1.pid = lmer(glue("mc.value~aware*pid.cat  + (1| mc)"), data=tab)
+boundary (singular) fit: see help('isSingular')
+> mod2.pid = lmer(glue("mc.value~aware*pid.cat + {get_controls(CONTROLS)} + (1| mc)"), data=tab)
+boundary (singular) fit: see help('isSingular')
+> mod3.pid = lm(glue("mc.value ~ aware*mc*pid.cat"), data=tab)
+> mod4.pid = lm(glue("mc.value ~ aware*mc*pid.cat + {get_controls(CONTROLS)}"), data=tab)
+> 
+> res.mc.stack = list(mod1, mod1.pid,
++                     mod2, mod2.pid,
++                     mod3, mod3.pid, 
++                     mod4, mod4.pid)
+> 
+> ## ** DONE Reestimation (subsample)
+> ## *** DONE separately by policy
+> ## Note: The estimation is repeated using different reference groups,
+> ##   G0 and G0 (aware)
+> 
+> 
+> plan(multisession, workers = parallel::detectCores()-2)
+Setting theme "Compact"
+Setting theme "language: en"
+Setting theme "Exploratory Data Analysis"
+
+- Settings loaded...
+Setting theme "Compact"
+Setting theme "language: en"
+Setting theme "Exploratory Data Analysis"
+
+- Settings loaded...
+Setting theme "Compact"
+Setting theme "language: en"
+Setting theme "Exploratory Data Analysis"
+
+- Settings loaded...
+Setting theme "Compact"
+Setting theme "Compact"
+Setting theme "Compact"
+Setting theme "language: en"
+Setting theme "language: en"
+Setting theme "language: en"
+Setting theme "Exploratory Data Analysis"
+
+- Settings loaded...
+Setting theme "Exploratory Data Analysis"
+Setting theme "Exploratory Data Analysis"
+
+- Settings loaded...
+
+- Settings loaded...
+> res.pp.no.mc = (
++     df
++     %>% filter(mc.prior=='none') 
++     %>% nest(-policy)  
++     %>% crossing(pid = c('pid', 'psid')) 
++     %>% crossing(covars = list(1, CONTROLS))   
++     %>% crossing(ref=c('G0', 'G0 (aware)'))
++     %>% rowwise(.)
++     %>% mutate(formula = glue("att ~ {pid}*treat.group + {get_controls(covars)}"))  
++     %>% ungroup(.) 
++     %>% mutate(
++             ncovars = future_map_dbl(.x=covars, function(.x) length(.x)-1),
++             fit     = future_pmap(list(formula, data, pid, ref), function(formula, data, pid, ref)
++                 estimate(formula, data, pid, ref)
++                 ),
++             )  
++     %>% unnest(fit)
++ )
+Registered S3 methods overwritten by 'broom':
+  method            from  
+  tidy.glht         jtools
+  tidy.summary.glht jtools
+Registered S3 methods overwritten by 'broom':
+  method            from  
+  tidy.glht         jtools
+  tidy.summary.glht jtools
+Registered S3 methods overwritten by 'broom':
+  method            from  
+  tidy.glht         jtools
+  tidy.summary.glht jtools
+Registered S3 methods overwritten by 'broom':
+  method            from  
+  tidy.glht         jtools
+  tidy.summary.glht jtools
+Registered S3 methods overwritten by 'broom':
+  method            from  
+  tidy.glht         jtools
+  tidy.summary.glht jtools
+Registered S3 methods overwritten by 'broom':
+  method            from  
+  tidy.glht         jtools
+  tidy.summary.glht jtools
+> plan(sequential)
+> res.pp.no.mc
+# A tibble: 64 × 11
+  policy                data     pid   covars ref   formula ncovars fit   summ     glance   pred    
+  <chr+lbl>             <list>   <chr> <list> <chr> <glue>    <dbl> <lis> <list>   <list>   <list>  
+1 admin [Training peri… <tibble> pid   <dbl>  G0    att ~ …       0 <glm> <tibble> <tibble> <tibble>
+2 admin [Training peri… <tibble> pid   <dbl>  G0 (… att ~ …       0 <glm> <tibble> <tibble> <tibble>
+3 admin [Training peri… <tibble> pid   <chr>  G0    att ~ …       6 <glm> <tibble> <tibble> <tibble>
+4 admin [Training peri… <tibble> pid   <chr>  G0 (… att ~ …       6 <glm> <tibble> <tibble> <tibble>
+5 admin [Training peri… <tibble> psid  <dbl>  G0    att ~ …       0 <glm> <tibble> <tibble> <tibble>
+6 admin [Training peri… <tibble> psid  <dbl>  G0 (… att ~ …       0 <glm> <tibble> <tibble> <tibble>
+# ℹ 58 more rows
+> 
+> ## *** DONE pooled across policies (outcome: opinion congruence)
+> ## **** note
+> 
+> ## -----------------------------------------------------------------------------
+> ## We need to create two separate data sets for each cue conditions:
+> ##    Dem. suppport (ds) vs control (co)
+> ##    Rep. suppport (rs) vs control (co)
+> ##    It is needed because we have to code partisans consistently in the
+> ##      control (no cue) and treatment (cue) groups. For both groups
+> ##      1/0 means one supports/opposes the policy *in the expected theoretical direction*
+> ##    This means we need to code the control group differently depending
+> ##      on the treatment value
+> ##    Ex:
+> ##    - If Treatment cue is "Dem. support/Rep. oppose," (ds) Then,
+> ##      the outcome for *all* Democratic voters (control or treated) should be
+> ##       1 if the Democratic voter *supports* the policy
+> ##       1 if the Republican voter *opposes* the policy
+> ##       0 otherwise
+> ##    - If Treatment cue is "Rep. support/Dem. oppose:" (rs)
+> ##       1 if the Democratic voter *opposes* the policy
+> ##       1 if the Republican voter *supports* the policy
+> ##       0 otherwise
+> ## 
+> ##    Therefore, value 1 indicates that policy support is in the theoretically
+> ##    expected direction given the treatment value received by the
+> ##    treatment group
+> ## 
+> ##    We need to recode the control group accordingly to make sure
+> ##     the value 1 means the same thing in the control and treatment groups
+> ##    We can also recode the cue into a binary indicator because
+> ##     each dataset will have one treatment condition only
+> ## -----------------------------------------------------------------------------
+> 
+> 
+> 
+> ## **** estimation
+> 
+> ## Preparing the data
+> ## ------------------
+> vars = c("rid", "pid.cat", "cue", "aware", "policy", "att", CONTROLS)
+> df.ds = (
++     df 
++     %>% select(vars)
++     %>% filter(cue %in% c('co', 'ds'))    
++     %>% mutate(
++             `Awareness effect`=aware,
++             `Party cue effect` = ifelse(cue=='co', 0, 1),
++             att.congruent = case_when(
++                 pid.cat=='Democratic voter' & att == 1 ~ 1,
++                 pid.cat=='Republican voter' & att == 0 ~ 1,
++                 ## 
++                 pid.cat=='Democratic voter' & att == 0 ~ 0,
++                 pid.cat=='Republican voter' & att == 1 ~ 0,
++                 ),
++             )  
++     %>% drop_na(att.congruent)   
++ )
+> df.rs = (
++     df 
++     ## %>% mutate(att=tidyr::replace_na(att, 0))
++     %>% select(vars)
++     %>% filter(cue %in% c('co', 'rs'))  
++     %>% mutate(
++             `Awareness effect`=aware,
++             `Party cue effect` = ifelse(cue=='co', 0, 1),
++             att.congruent = case_when(
++                 pid.cat=='Republican voter' & att == 1 ~ 1,
++                 pid.cat=='Republican voter' & att == 0 ~ 0,
++                 ## 
++                 pid.cat=='Democratic voter' & att == 1 ~ 0,
++                 pid.cat=='Democratic voter' & att == 0 ~ 1,
++                 ),
++         )
++     %>% drop_na(att.congruent) 
++ )
+> cat("\n ------------ Checking (attitude congruent coding) ------------\n")
+
+ ------------ Checking (attitude congruent coding) ------------
+> (
++     df.ds 
++     %>% group_by(cue, `Party cue effect`, pid.cat, att, att.congruent) 
++     %>% summarise(n=n() ) 
++ ) %>% print(., n=Inf, width=Inf) 
+# A tibble: 8 × 6
+# Groups:   cue, Party cue effect, pid.cat, att [8]
+  cue                           `Party cue effect` pid.cat          att         att.congruent     n
+  <chr+lbl>                                  <dbl> <chr>            <dbl+lbl>           <dbl> <int>
+1 co [Control]                                   0 Democratic voter 0 [Oppose]              0   191
+2 co [Control]                                   0 Democratic voter 1 [Support]             1  1079
+3 co [Control]                                   0 Republican voter 0 [Oppose]              1   202
+4 co [Control]                                   0 Republican voter 1 [Support]             0   311
+5 ds [Dem. Support/Rep. Oppose]                  1 Democratic voter 0 [Oppose]              0   123
+6 ds [Dem. Support/Rep. Oppose]                  1 Democratic voter 1 [Support]             1  1159
+7 ds [Dem. Support/Rep. Oppose]                  1 Republican voter 0 [Oppose]              1   324
+8 ds [Dem. Support/Rep. Oppose]                  1 Republican voter 1 [Support]             0   200
+> (
++     df.rs
++     %>% group_by(cue, `Party cue effect`, pid.cat, att, att.congruent) 
++     %>% summarise(n=n() ) 
++ ) %>% print(., n=Inf, width=Inf) 
+# A tibble: 8 × 6
+# Groups:   cue, Party cue effect, pid.cat, att [8]
+  cue                           `Party cue effect` pid.cat          att         att.congruent     n
+  <chr+lbl>                                  <dbl> <chr>            <dbl+lbl>           <dbl> <int>
+1 co [Control]                                   0 Democratic voter 0 [Oppose]              1   191
+2 co [Control]                                   0 Democratic voter 1 [Support]             0  1079
+3 co [Control]                                   0 Republican voter 0 [Oppose]              0   202
+4 co [Control]                                   0 Republican voter 1 [Support]             1   311
+5 rs [Rep. Support/Dem. Oppose]                  1 Democratic voter 0 [Oppose]              1   393
+6 rs [Rep. Support/Dem. Oppose]                  1 Democratic voter 1 [Support]             0   822
+7 rs [Rep. Support/Dem. Oppose]                  1 Republican voter 0 [Oppose]              0   175
+8 rs [Rep. Support/Dem. Oppose]                  1 Republican voter 1 [Support]             1   370
+> 
+> ## estimation
+> ## ----------
+> cat('Estimating RE (no adjustment variables)...')
+Estimating RE (no adjustment variables)...> formula.baseline=glue("att.congruent~`Party cue effect`*`Awareness effect`",
++                " + (1 + `Party cue effect`*`Awareness effect` | policy)",
++                " + (1 | rid)")
+> res.ds = glmer(formula.baseline, data=df.ds, family="binomial")
+> res.rs = glmer(formula.baseline, data=df.rs, family="binomial")
+> ## 
+> cat('Estimating RE (with adjustment variables)...')
+Estimating RE (with adjustment variables)...> formula.adj = as.formula(paste(formula.baseline, "+", get_controls(CONTROLS)))
+> res.ds.adj = glmer(formula.adj, data=df.ds, family="binomial")
+> res.rs.adj = glmer(formula.adj, data=df.rs, family="binomial")
+> cat('Done!')
+Done!> 
+> ## *** DONE difference-in-differences
+> 
+> res.did.no.mc = (
++     res.pp.no.mc
++     %>% filter(ref=='G0') 
++     %>% mutate(did = future_map2(.x=fit, .y=pid, function(fit=.x, pid=.y) estimate.did(fit, pid))) 
++     %>% unnest(did)
++ )
+> ## res.did %>% glimpse()
+> 
+> ## checking 
+> ## --------
+> cat("\n ------------ Checking (DiD computation) ------------\n")
+
+ ------------ Checking (DiD computation) ------------
+> check_did(res.did, cue='ds', row=3)
+
+ ------------ Checking (manual check Did) ------------
+
+--------------- Computed: ---------------
+               [,1]                                                                        
+policy         "admin"                                                                     
+data           tbl_df,26                                                                   
+pid            "psid"                                                                      
+covars         1                                                                           
+ref            "G0"                                                                        
+formula        "att ~ psid*treat.group + 1"                                                
+ncovars        0                                                                           
+fit            glm,31                                                                      
+summ           tbl_df,7                                                                    
+glance         tbl_df,8                                                                    
+pred           tbl_df,5                                                                    
+cue            "ds"                                                                        
+test           "(psid:treat.groupG1) - (psid:treat.groupG2 - `psid:treat.groupG0 (aware)`)"
+estimate       0.8342                                                                      
+std.error      0.711                                                                       
+statistic      1.173                                                                       
+p.value        0.2407                                                                      
+conf.low       -0.5593                                                                     
+conf.high      2.228                                                                       
+label          "(G1) - (G2 - G0 (aware))"                                                  
+PxG1           -0.3312                                                                     
+PxG2           -0.2336                                                                     
+PxG3           1.762                                                                       
+PxG4           1.749                                                                       
+PxG2 (aware)   -1.165                                                                      
+PxG4 (aware)   0.817                                                                       
+PxG0 (aware)   0.9319                                                                      
+baseline.group "G1"                                                                        
+aware.group    "G2"                                                                        
+PxCue          -0.3312                                                                     
+PxCue.aware    -1.165                                                                      
+did            0.8342                                                                      
+change         251.9                                                                       
+stars          ""                                                                          
+did.label      "0.83 (-0.56, 2.23)"                                                        
+change.arrow   "0"                                                                         
+change.label   "251.9\\% (0)"                                                              
+
+--------------- Replication: ---------------
+# A tibble: 1 × 8
+  lhs                                    rhs estimate std.error statistic p.value conf.low conf.high
+  <chr>                                <dbl>    <dbl>     <dbl>     <dbl>   <dbl>    <dbl>     <dbl>
+1 (psid:treat.groupG1) - (psid:treat.…     0    0.834     0.711      1.17   0.241   -0.559      2.23
+
+---------------Manual check:---------------
+
+Model with G0 as reference:
+              [,1]
+G0 (aware)  0.9319
+P x G1     -0.3312
+P x G2     -0.2336
+
+Model with G0 (aware) as reference:
+          [,1]
+P x G1 -1.2631
+P x G2 -1.1655
+G0     -0.9319
+
+Same reg, subtracting the Aware effect:
+psid:treat.groupG1 
+            0.8342 
+
+Using 2 reg with different reference groups:
+psid:treat.groupG1 
+            0.8342 
+> check_did(res.did, cue='rs', row=6)
+
+ ------------ Checking (manual check Did) ------------
+
+--------------- Computed: ---------------
+               [,1]                                                                                 
+policy         "care"                                                                               
+data           tbl_df,26                                                                            
+pid            "pid"                                                                                
+covars         character,7                                                                          
+ref            "G0"                                                                                 
+formula        "att ~ pid*treat.group + educ.std + age.std + inchh.std + white + female + nfc + nfa"
+ncovars        6                                                                                    
+fit            glm,31                                                                               
+summ           tbl_df,7                                                                             
+glance         tbl_df,8                                                                             
+pred           tbl_df,12                                                                            
+cue            "rs"                                                                                 
+test           "(pid:treat.groupG3) - (pid:treat.groupG4 - `pid:treat.groupG0 (aware)`)"            
+estimate       -0.4739                                                                              
+std.error      0.6571                                                                               
+statistic      -0.7213                                                                              
+p.value        0.4707                                                                               
+conf.low       -1.762                                                                               
+conf.high      0.8139                                                                               
+label          "(G3) - (G4 - G0 (aware))"                                                           
+PxG1           -0.4517                                                                              
+PxG2           -0.6598                                                                              
+PxG3           1.201                                                                                
+PxG4           1.291                                                                                
+PxG2 (aware)   -0.276                                                                               
+PxG4 (aware)   1.675                                                                                
+PxG0 (aware)   -0.3838                                                                              
+baseline.group "G3"                                                                                 
+aware.group    "G4"                                                                                 
+PxCue          1.201                                                                                
+PxCue.aware    1.675                                                                                
+did            -0.4739                                                                              
+change         39.46                                                                                
+stars          ""                                                                                   
+did.label      "-0.47 (-1.76, 0.81)"                                                                
+change.arrow   "0"                                                                                  
+change.label   "39.5\\% (0)"                                                                        
+
+--------------- Replication: ---------------
+# A tibble: 1 × 8
+  lhs                                    rhs estimate std.error statistic p.value conf.low conf.high
+  <chr>                                <dbl>    <dbl>     <dbl>     <dbl>   <dbl>    <dbl>     <dbl>
+1 (pid:treat.groupG3) - (pid:treat.gr…     0   -0.474     0.657    -0.721   0.471    -1.76     0.814
+
+---------------Manual check:---------------
+
+Model with G0 as reference:
+              [,1]
+G0 (aware) -0.3838
+P x G3      1.2009
+P x G4      1.2911
+
+Model with G0 (aware) as reference:
+         [,1]
+P x G3 1.5847
+P x G4 1.6749
+G0     0.3838
+
+Same reg, subtracting the Aware effect:
+pid:treat.groupG3 
+          -0.4739 
+
+Using 2 reg with different reference groups:
+pid:treat.groupG3 
+          -0.4739 
+> 
+> 
+> ## *** DONE pooled (overall average)
+> 
+> ## Preparing the data
+> ## ------------------
+> vars = c("rid", "pid.cat", "cue", "aware", "policy", "att", CONTROLS)
+> df.ds = (
++     df  
++     %>% filter(mc.prior=='none') 
++     %>% select(vars)
++     %>% filter(cue %in% c('co', 'ds'))    
++     %>% mutate(
++             `Awareness effect`=aware,
++             `Party cue effect` = ifelse(cue=='co', 0, 1),
++             att.congruent = case_when(
++                 pid.cat=='Democratic voter' & att == 1 ~ 1,
++                 pid.cat=='Democratic voter' & att == 0 ~ 0,
++                 ## 
++                 pid.cat=='Republican voter' & att == 1 ~ 0,
++                 pid.cat=='Republican voter' & att == 0 ~ 1,
++                 ),
++             )  
++     %>% drop_na(att.congruent)   
++ )
+> df.rs = (
++     df 
++     %>% filter(mc.prior=='none') 
++     %>% select(vars)
++     %>% filter(cue %in% c('co', 'rs'))  
++     %>% mutate(
++             `Awareness effect`=aware,
++             `Party cue effect` = ifelse(cue=='co', 0, 1),
++             att.congruent = case_when(
++                 pid.cat=='Republican voter' & att == 1 ~ 1,
++                 pid.cat=='Republican voter' & att == 0 ~ 0,
++                 ## 
++                 pid.cat=='Democratic voter' & att == 1 ~ 0,
++                 pid.cat=='Democratic voter' & att == 0 ~ 1,
++                 ),
++         )
++     %>% drop_na(att.congruent) 
++ )
+> cat("\n ------------ Checking (attitude congruent coding) ------------\n")
+
+ ------------ Checking (attitude congruent coding) ------------
+> (
++     df.ds 
++     %>% group_by(cue, `Party cue effect`, pid.cat, att, att.congruent) 
++     %>% summarise(n=n() ) 
++ ) %>% print(., n=Inf, width=Inf) 
+# A tibble: 8 × 6
+# Groups:   cue, Party cue effect, pid.cat, att [8]
+  cue                           `Party cue effect` pid.cat          att         att.congruent     n
+  <chr+lbl>                                  <dbl> <chr>            <dbl+lbl>           <dbl> <int>
+1 co [Control]                                   0 Democratic voter 0 [Oppose]              0    96
+2 co [Control]                                   0 Democratic voter 1 [Support]             1   578
+3 co [Control]                                   0 Republican voter 0 [Oppose]              1    99
+4 co [Control]                                   0 Republican voter 1 [Support]             0   170
+5 ds [Dem. Support/Rep. Oppose]                  1 Democratic voter 0 [Oppose]              0    59
+6 ds [Dem. Support/Rep. Oppose]                  1 Democratic voter 1 [Support]             1   567
+7 ds [Dem. Support/Rep. Oppose]                  1 Republican voter 0 [Oppose]              1   163
+8 ds [Dem. Support/Rep. Oppose]                  1 Republican voter 1 [Support]             0   103
+> (
++     df.rs
++     %>% group_by(cue, `Party cue effect`, pid.cat, att, att.congruent) 
++     %>% summarise(n=n() ) 
++ ) %>% print(., n=Inf, width=Inf) 
+# A tibble: 8 × 6
+# Groups:   cue, Party cue effect, pid.cat, att [8]
+  cue                           `Party cue effect` pid.cat          att         att.congruent     n
+  <chr+lbl>                                  <dbl> <chr>            <dbl+lbl>           <dbl> <int>
+1 co [Control]                                   0 Democratic voter 0 [Oppose]              1    96
+2 co [Control]                                   0 Democratic voter 1 [Support]             0   578
+3 co [Control]                                   0 Republican voter 0 [Oppose]              0    99
+4 co [Control]                                   0 Republican voter 1 [Support]             1   170
+5 rs [Rep. Support/Dem. Oppose]                  1 Democratic voter 0 [Oppose]              1   202
+6 rs [Rep. Support/Dem. Oppose]                  1 Democratic voter 1 [Support]             0   423
+7 rs [Rep. Support/Dem. Oppose]                  1 Republican voter 0 [Oppose]              0    75
+8 rs [Rep. Support/Dem. Oppose]                  1 Republican voter 1 [Support]             1   169
+> ## 
+> ## estimation
+> ## ----------
+> cat('Estimating RE (no adjustment variables)...')
+Estimating RE (no adjustment variables)...> formula.baseline=glue("att.congruent~`Party cue effect`*`Awareness effect`",
++                " + (1 + `Party cue effect`*`Awareness effect` | policy)",
++                " + (1 | rid)")
+> res.ds.no.mc = glmer(formula.baseline, data=df.ds, family="binomial")
+> res.rs.no.mc = glmer(formula.baseline, data=df.rs, family="binomial")
+> ## 
+> cat('Estimating RE (with adjustment variables)...')
+Estimating RE (with adjustment variables)...> formula.adj = as.formula(paste(formula.baseline, "+", get_controls(CONTROLS)))
+> res.ds.no.mc.adj = glmer(formula.adj, data=df.ds, family="binomial")
+> res.rs.no.mc.adj = glmer(formula.adj, data=df.rs, family="binomial")
+boundary (singular) fit: see help('isSingular')
+> cat('Done!')
+Done!> 
+> 
+> ## *** robustness to MC (MC interaction)
+> 
+> 
+> cat("\n\nEstimating hierarchical model. This may take a while...")
+
+
+Estimating hierarchical model. This may take a while...> f = glue("att ~ pid.cat*cue*aware*mc.prior",
++          " + (1 + cue*aware | policy)",
++          " + (1 | rid)")
+> df.tmp = (
++     df
++     %>% mutate(mc.prior = case_when(mc.prior=='none' ~ 0,
++                                     mc.prior %in% c('mc1', 'mc2') ~ 1)) 
++ )
+> res.agg.mc.int = (
++     tibble(covars = list(1, CONTROLS))   
++     %>% rowwise(.)
++     %>% mutate(formula = glue("{f} + {get_controls(covars)}"))   
++     %>% crossing(model=c('lpm', 'logistic')) 
++     %>% ungroup(.) 
++     %>% mutate(
++             ncovars = future_map_dbl(.x=covars, function(.x) length(.x)-1),
++             fit = future_map2(.x=formula, .y=model, function(.x, .y)
++                 if (.y=='lpm')
++                 {
++                     lmer(.x,
++                          data=df.tmp %>% as_label(aware, pid.cat))
++                 }else {
++                     glmer(.x,
++                           data=df.tmp %>% as_label(aware, pid.cat),
++                           family='binomial')
++                 }),
++             summ = future_map(.x=fit, function(.x) tidy(.x, conf.int=TRUE)),
++             glance = future_map(.x=fit, function(.x) glance(.x)),
++             pred = future_pmap(list(fit), function(fit)
++                 predictions(fit, by=c('aware', 'pid.cat', 'cue'))
++                 )
++         )
++ )
+boundary (singular) fit: see help('isSingular')
+boundary (singular) fit: see help('isSingular')
+> cat("done!\n\n")
+done!
+
+> 
+> 
+> 
+> ## ** DONE balance
+> ## *** SMD
+> 
+> treat     = "treat.group"
+> ref.group = 'G0'
+> method    = 'optimal'
+> distance  = "glm"
+> threshold = 0.1
+> 
+> 
+> ## Note: this procedure compares covariate balance between a reference group
+> ##  (e.g., control) and each treatment group
+> ## computing
+> ## ---------
+> idx = !str_detect(CONTROLS, pattern="nfa|nfc")
+> f = formula(glue("treat ~ {get_controls(CONTROLS[idx])}"))
+> df.control = (
++     df 
++     %>% filter(treat.group==ref.group) 
++     %>% select(CONTROLS, treat=!!treat)  
++ )
+> res.bal = (
++     df  
++     %>% select(CONTROLS, treat=!!treat)  
++     %>% drop_na(treat)  
++     %>% nest(-treat) 
++     %>% filter(treat!=!!ref.group)
++     %>% mutate(
++             data=future_map(.x=data, function(.x)
++                 .x
++                 %>% bind_rows(df.control) 
++                 %>% mutate(treat = case_when(treat==!!ref.group ~ 0, T ~ 1)) 
++                 ),
++             fit=future_map(.x=data, function(.x)
++                 matchit(formula=f, data=.x, method=method , distance=distance)),
++             balance = future_map(.x=fit, function(.x)
++                 bal.tab(.x, thresholds = c(m = .1), un = TRUE)$Balance  
++                 %>% tibble(., Covariate=row.names(.))  
++                 %>% filter(Type!='Distance')  
++                 %>% select(Covariate, Diff.Un, contains("Thresh")))
++                 )
++         )
+> 
+> 
+> ## ** DONE missing
+> 
+> tab = (
++     df 
++     %>% distinct(rid, .keep_all=TRUE) 
++     %>% drop_na(cue, aware)  
++     %>% select(att, cue, aware, pid.cat, CONTROLS) 
++     %>% mutate(missing = as.numeric(rowSums(is.na(.)) > 0))
++ )
+> ## tab
+> controls = CONTROLS[!CONTROLS %in%  c('nfc', 'nfa')]
+> f = glue("missing ~ cue + aware")
+> f.adj = glue("missing ~ {get_controls(c('cue', 'aware', 'pid.cat', controls))}")
+> res.miss = list(glm(f, data=tab, family = 'binomial'),
++                 glm(f.adj, data=tab, family = 'binomial'))
+> summary(res.miss[[1]])
+
+Call:
+glm(formula = f, family = "binomial", data = tab)
+
+Coefficients:
+            Estimate Std. Error z value            Pr(>|z|)    
+(Intercept)   -1.893      0.149  -12.69 <0.0000000000000002 ***
+cueds         -0.454      1.060   -0.43                0.67    
+cuers          0.802      0.596    1.35                0.18    
+aware          0.284      0.200    1.42                0.16    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 675.68  on 797  degrees of freedom
+Residual deviance: 672.07  on 794  degrees of freedom
+AIC: 680.1
+
+Number of Fisher Scoring iterations: 4
+
+> summary(res.miss[[2]])
+
+Call:
+glm(formula = f.adj, family = "binomial", data = tab)
+
+Coefficients:
+                        Estimate Std. Error z value            Pr(>|z|)    
+(Intercept)              -2.5609     0.2947   -8.69 <0.0000000000000002 ***
+cueds                    -0.4783     1.0655   -0.45               0.654    
+cuers                     0.8020     0.6051    1.33               0.185    
+aware                     0.2636     0.2015    1.31               0.191    
+pid.catRepublican voter   0.1673     0.2243    0.75               0.456    
+educ.std                 -0.1525     0.1133   -1.35               0.178    
+age.std                   0.0382     0.0975    0.39               0.695    
+inchh.std                 0.0044     0.1155    0.04               0.970    
+white                     0.5230     0.2686    1.95               0.052 .  
+female                    0.3312     0.2170    1.53               0.127    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 675.68  on 797  degrees of freedom
+Residual deviance: 660.47  on 788  degrees of freedom
+AIC: 680.5
+
+Number of Fisher Scoring iterations: 4
+
+> 
+> 
+> ## * Tables
+> ## ** DONE Table F1 to F4 (Survey vs Census)
+> 
+> tables = tibble::tribble(
++                      ~table   , ~var  , ~label,
++                      'tab-f1', 'educ' , 'Education',
++                      'tab-f2', 'inchh', 'Income',
++                      'tab-f3', 'age'  , 'Age',
++                      'tab-f4', 'race' , 'Race'
++                  ) %>% 
++     mutate(caption = glue("\\label{{{table}}}{label}: Sample versus Census") )
+> 
+> sample.vs.census(df, 'educ' , tables, SAVE, F, column.spec="7cm")
+Found more than one class "haven_labelled" in cache; using the first, from namespace 'haven'
+Also defined by ‘optmatch’
+# A tibble: 5 × 5
+   Code Category                                        `N (survey)` `Freq (survey)` `Freq (Census)`
+  <dbl> <chr>                                                  <int>           <dbl>           <dbl>
+1     1 Less than high school                                     22            2.76            9.77
+2     2 Complete high school (or equivalent, including…          218           27.3            27.8 
+3     3 Some college (but didn't complete) or associat…          253           31.7            27.6 
+4     4 College/Bachelor’s degree (4-year)                       176           22.1            22.1 
+5     5 Complete Master, Doctoral, or terminal profess…          129           16.2            12.7 
+Saving tab-f1...done!
+> sample.vs.census(df, 'inchh', tables, SAVE, F)
+Found more than one class "haven_labelled" in cache; using the first, from namespace 'haven'
+Also defined by ‘optmatch’
+# A tibble: 10 × 5
+    Code Category          `N (survey)` `Freq (survey)` `Freq (Census)`
+   <dbl> <chr>                    <int>           <dbl>           <dbl>
+ 1     1 0 - 10,000                  52            6.52             5.8
+ 2     2 10,000 - 14,999             45            5.64             4  
+ 3     3 15,000 - 24,999             69            8.65             8.3
+ 4     4 25,000 - 34,999             75            9.4              8.4
+ 5     5 35,000 - 49,999             88           11.0             11.9
+ 6     6 50,000 - 74,999            145           18.2             17.4
+ 7     7 75,000 - 99,999            113           14.2             12.8
+ 8     8 100,000 - 149,999          120           15.0             15.7
+ 9     9 150,000 - 199,999           56            7.02             7.2
+10    10 200,000 or more             35            4.39             8.5
+Saving tab-f2...done!
+> sample.vs.census(df, 'age'  , tables, SAVE, F)
+Found more than one class "haven_labelled" in cache; using the first, from namespace 'haven'
+Also defined by ‘optmatch’
+# A tibble: 15 × 5
+    Code Category           `N (survey)` `Freq (survey)` `Freq (Census)`
+   <dbl> <chr>                     <dbl>           <dbl>           <dbl>
+ 1    -1 Less than 17 years            0            0              NA   
+ 2     1 18 to 24 years               51            6.39           11.9 
+ 3     2 25 to 29 years               93           11.6             9.1 
+ 4     3 30 to 34 years               76            9.52            8.75
+ 5     4 35 to 39 years               50            6.27            8.51
+ 6     5 40 to 44 years               80           10.0             7.91
+ 7     6 45 to 49 years               46            5.76            7.99
+ 8     7 50 to 54 years               76            9.52            8.02
+ 9     8 55 to 59 years               62            7.77            8.42
+10     9 60 to 64 years               73            9.15            8.22
+11    10 65 to 69 years               82           10.3             6.83
+12    11 70 to 74 years               68            8.52            5.54
+13    12 75 to 79 years               32            4.01            3.82
+14    13 80 to 84 years                7            0.88            2.5 
+15    14 85 years or over              2            0.25            2.49
+Saving tab-f3...done!
+> sample.vs.census(df, 'race' , tables, SAVE, F)
+Found more than one class "haven_labelled" in cache; using the first, from namespace 'haven'
+Also defined by ‘optmatch’
+# A tibble: 6 × 5
+   Code Category                            `N (survey)` `Freq (survey)` `Freq (Census)`
+  <dbl> <chr>                                      <int>           <dbl>           <dbl>
+1     1 White                                        588           73.7            67.3 
+2     2 Black or African-American                    134           16.8            16   
+3     3 American Indian or Alaska Native              11            1.38            1.1 
+4     4 Asian                                         38            4.76            6.71
+5     5 Native Hawaiian or Pacific Islander            1            0.13            0.21
+6     6 Other (specify)                               26            3.26            8.7 
+Saving tab-f4...done!
+> 
+> ## ** DONE Table F5
+> 
+> table = 'tab-f5'
+> ## 
+> tab = (
++     df   
++     %>% distinct(rid, .keep_all=TRUE) 
++     %>% select(CONTROLS, policy, pid, psid, att) 
++ ) 
+> tab = tab %>% descriptive.statistics()
+# A tibble: 798 × 11
+  `Education (std)` `Age (std)` `Income (std)` `Race (white)` `Gender (female)` `Need for cognition`
+              <dbl>       <dbl>          <dbl>          <dbl>             <dbl>                <dbl>
+1            -0.129     -1.19            1.12               1                 1                0.625
+2            -1.06      -0.578           0.280              1                 0                0.625
+3             0.806      0.0368         -0.976              0                 0                0.675
+4            -0.129      0.652           1.12               1                 0                0.575
+5            -0.129      0.959          -0.558              1                 1                0.6  
+6            -0.129      1.27           -0.139              1                 1                0.525
+# ℹ 792 more rows
+> tab
+# A tibble: 10 × 9
+  Variable               N `Missing (%)`  Mean Std.Dev   Min Median   Max   IQR
+  <fct>              <dbl>         <dbl> <dbl>   <dbl> <dbl>  <dbl> <dbl> <dbl>
+1 Education (std)      798             0 0.072   1.03  -2    -0.129  1.74 1.87 
+2 Age (std)            798             0 0.156   1.05  -1.50  0.344  2.50 1.84 
+3 Income (std)         798             0 0.162   1.01  -1.81  0.28   1.95 1.68 
+4 Race (white)         798             0 0.737   0.441  0     1      1    1    
+5 Gender (female)      798             0 0.619   0.486  0     1      1    1    
+6 Need for cognition   798             0 0.569   0.167  0.15  0.575  1    0.225
+# ℹ 4 more rows
+> ## 
+> caption = glue('\\label{{{table}}}Descriptive Statistics') 
+> tabl = (
++     tab 
++     %>% kable(., "latex", booktabs = T, caption=caption,
++               escape=T, align=c("l", rep("c", ncol(.)-1)),
++               digits=4, longtable = F, table.envir = "table",
++               linesep = NULL)
++ )
+> tabl
+\begin{table}
+
+\caption{\label{tab-f5}Descriptive Statistics}
+\centering
+\begin{tabular}[t]{lcccccccc}
+\toprule
+Variable & N & Missing (\%) & Mean & Std.Dev & Min & Median & Max & IQR\\
+\midrule
+Education (std) & 798 & 0.00 & 0.072 & 1.027 & -2.000 & -0.129 & 1.742 & 1.871\\
+Age (std) & 798 & 0.00 & 0.156 & 1.046 & -1.501 & 0.344 & 2.497 & 1.845\\
+Income (std) & 798 & 0.00 & 0.162 & 1.008 & -1.814 & 0.280 & 1.954 & 1.675\\
+Race (white) & 798 & 0.00 & 0.737 & 0.441 & 0.000 & 1.000 & 1.000 & 1.000\\
+Gender (female) & 798 & 0.00 & 0.619 & 0.486 & 0.000 & 1.000 & 1.000 & 1.000\\
+Need for cognition & 798 & 0.00 & 0.569 & 0.167 & 0.150 & 0.575 & 1.000 & 0.225\\
+Need for accuracy & 798 & 0.00 & 0.595 & 0.157 & 0.167 & 0.611 & 1.000 & 0.194\\
+Party identification (ANES) & 798 & 0.00 & -0.346 & 0.754 & -1.000 & -0.500 & 1.000 & 1.500\\
+Party identity (social) & 798 & 0.00 & -0.296 & 0.667 & -1.000 & -0.618 & 1.000 & 1.235\\
+Policy attitude & 678 & 15.04 & 0.805 & 0.396 & 0.000 & 1.000 & 1.000 & 0.000\\
+\bottomrule
+\end{tabular}
+\end{table}
+> if(SAVE){save.table(tab, tabl, PATH_MAN_TABLES, table)}
+Saving tab-f5...done!
+> 
+> ## ** DONE Table F6
+> 
+> table = 'tab-f6'
+> ## 
+> tab = (
++     df 
++     %>% group_by(treat.group, policy) 
++     %>% summarise(n = n())  
++     %>% group_by(treat.group) 
++     %>% summarise(
++             Mean = mean(n, na.rm=T),
++             Min  = min(n, na.rm=T),
++             Max  = max(n, na.rm=T) 
++         )  
++     %>% mutate(Group = treat.group %>% remove_val_labels(),
++                Cue = treat.group %>% sjlabelled::as_label(.) ) 
++     %>% select(Group, Cue, everything(), -treat.group)
++ )
+> tab %>% print(., n=Inf, width=Inf) 
+# A tibble: 6 × 5
+  Group      Cue                               Mean   Min   Max
+  <chr>      <fct>                            <dbl> <int> <int>
+1 G0         Control                           134.   114   144
+2 G0 (aware) Control (aware)                   132.   123   137
+3 G1         Dem. Support/Rep. Oppose          134.   120   148
+4 G2         Dem. Support/Rep. Oppose (aware)  127.   120   138
+5 G3         Rep. Support/Dem. Oppose          136.   125   142
+6 G4         Rep. Support/Dem. Oppose (aware)  135.   122   149
+> ## 
+> caption = glue("\\label{{{table}}}Sample size by treatment group and across policies") 
+> tabl = (
++     tab 
++     %>% kable(., "latex", booktabs = T, caption=caption,
++               escape=F, align=c("l", 'l', rep("c", ncol(.)-2)),
++               digits=4, longtable = F, table.envir = "table",
++               linesep = NULL)
++     %>% add_header_above(
++             header = c(" "= 2,
++                        'Sample size across\npolicy topic'=3)) 
++ )
+> tabl
+\begin{table}
+
+\caption{\label{tab-f6}Sample size by treatment group and across policies}
+\centering
+\begin{tabular}[t]{llccc}
+\toprule
+\multicolumn{2}{c}{ } & \multicolumn{3}{c}{\makecell[c]{Sample size across\\policy topic}} \\
+\cmidrule(l{3pt}r{3pt}){3-5}
+Group & Cue & Mean & Min & Max\\
+\midrule
+G0 & Control & 134.4 & 114 & 144\\
+G0 (aware) & Control (aware) & 131.8 & 123 & 137\\
+G1 & Dem. Support/Rep. Oppose & 133.9 & 120 & 148\\
+G2 & Dem. Support/Rep. Oppose (aware) & 127.4 & 120 & 138\\
+G3 & Rep. Support/Dem. Oppose & 135.8 & 125 & 142\\
+G4 & Rep. Support/Dem. Oppose (aware) & 134.9 & 122 & 149\\
+\bottomrule
+\end{tabular}
+\end{table}
+> if(SAVE){save.table(tab, tabl, PATH_MAN_TABLES, table)}
+Saving tab-f6...done!
+> 
+> ## ** DONE Table F7
+> 
+> table = 'tab-f7'
+> ## 
+> omit = NULL
+> tab = modelsummary(res.miss,
++                    statistic='({conf.low}, {conf.high})',
++                    stars=TRUE, ## c('*' = .1, '**' = .05, "***"=0.01),
++                    vcov = 'classical', #"classical", "robust", "stata", "HC4", "HC0",
++                    ## 
++                    coef_omit = omit,
++                    coef_rename=c(
++                        "cueds"="Dem. support cue",
++                        "cuers"="Rep. support cue",
++                        "pid.catRepublican voter" = 'Rep. voter',
++                        unlist(LABELS.VARS)
++                    ),
++                    output='data.frame',
++                    )%>% 
++     select(-part, -statistic)%>% 
++     mutate(term = ifelse(lag(term)==term & !is.na(lag(term)), "", term))
+> tab
+               term              (1)              (2)
+1       (Intercept)        -1.893***        -2.561***
+2                   (-2.196, -1.610) (-3.165, -2.007)
+3  Dem. support cue           -0.454           -0.478
+4                    (-3.375, 1.234)  (-3.404, 1.227)
+5  Rep. support cue            0.802            0.802
+6                    (-0.499, 1.901)  (-0.514, 1.922)
+7         Awareness            0.284            0.264
+8                    (-0.107, 0.679)  (-0.130, 0.661)
+9        Rep. voter                             0.167
+10                                    (-0.278, 0.603)
+11  Education (std)                            -0.153
+12                                    (-0.376, 0.069)
+13        Age (std)                             0.038
+14                                    (-0.153, 0.230)
+15     Income (std)                             0.004
+16                                    (-0.222, 0.231)
+17     Race (white)                            0.523+
+18                                     (0.013, 1.071)
+19  Gender (female)                             0.331
+20                                    (-0.088, 0.765)
+21         Num.Obs.              798              798
+22              AIC            680.1            680.5
+23              BIC            698.8            727.3
+24         Log.Lik.         -336.037         -330.233
+25             RMSE             0.36             0.35
+26       Std.Errors              IID              IID
+> caption = glue("\\label{{{table}}}Logistic regression of the missing cases indicator on treatment conditions and adjustment variables.")
+> tabl = (
++     tab
++     %>% kable(., "latex", booktabs = T, caption=caption,
++               escape=F, align=c("l", rep("c", ncol(.)-1)),
++               digits=4, longtable = F, table.envir = "table",
++               linesep = NULL) 
++     %>% kable_styling(latex_options = c("scale_down", "repeat_header", "hold_position"),
++                       position = "center", font_size=NULL) 
++ )
+> tabl
+\begin{table}[!h]
+\centering
+\caption{\label{tab-f7}Logistic regression of the missing cases indicator on treatment conditions and adjustment variables.}
+\centering
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
+\begin{tabular}[t]{lcc}
+\toprule
+term & (1) & (2)\\
+\midrule
+(Intercept) & -1.893*** & -2.561***\\
+ & (-2.196, -1.610) & (-3.165, -2.007)\\
+Dem. support cue & -0.454 & -0.478\\
+ & (-3.375, 1.234) & (-3.404, 1.227)\\
+Rep. support cue & 0.802 & 0.802\\
+ & (-0.499, 1.901) & (-0.514, 1.922)\\
+Awareness & 0.284 & 0.264\\
+ & (-0.107, 0.679) & (-0.130, 0.661)\\
+Rep. voter &  & 0.167\\
+ &  & (-0.278, 0.603)\\
+Education (std) &  & -0.153\\
+ &  & (-0.376, 0.069)\\
+Age (std) &  & 0.038\\
+ &  & (-0.153, 0.230)\\
+Income (std) &  & 0.004\\
+ &  & (-0.222, 0.231)\\
+Race (white) &  & 0.523+\\
+ &  & (0.013, 1.071)\\
+Gender (female) &  & 0.331\\
+ &  & (-0.088, 0.765)\\
+Num.Obs. & 798 & 798\\
+AIC & 680.1 & 680.5\\
+BIC & 698.8 & 727.3\\
+Log.Lik. & -336.037 & -330.233\\
+RMSE & 0.36 & 0.35\\
+Std.Errors & IID & IID\\
+\bottomrule
+\end{tabular}}
+\end{table}
+> if (SAVE) {
++     cat(glue("Saving {table}...") )
++     fn = file.path(PATH_MAN_TABLES, glue("{table}"))
++     write.table(x=tab, file=glue("{fn}.csv") , row.names=F, sep=';')
++     write_xlsx(x=tab, path=glue("{fn}.xlsx"))
++     writeLines(text=tabl, glue("{fn}.tex"))
++     cat("done!\n")
++ }
+Saving tab-f7...done!
+> 
+> 
+> ## ** DONE Table G1 to G4 (regressions with PID)
+> 
+> ref='G0'
+> tables = (
++     tibble::tribble(
++                 ~policy , ~table  , ~pid,
++                 'gun'   , 'tab-g1', 'pid',
++                 'care'  , 'tab-g1', 'pid',
++                 'min'   , 'tab-g2', 'pid',
++                 'tax'   , 'tab-g2', 'pid',
++                 ##
++                 'elec'  , 'tab-g3', 'pid',
++                 'ocean' , 'tab-g3', 'pid',
++                 'fda'   , 'tab-g4', 'pid',
++                 'admin' , 'tab-g4', 'pid',
++             )
++ )
+> ## 
+> caption = glue("OLS estimates with standard errors clustered at respondent level.",
++                " The outcomes are attitudes toward policies (columns).",
++                " Party identification goes from Democratic (low values)",
++                " to Republican voters (high values).") 
+> tabs = (
++     res.pp 
++     %>% filter(ref==!!ref) 
++     %>% filter(pid=='pid') 
++     %>% left_join(., df %>%
++                      select(policy, policy.group) %>%
++                      distinct(., .keep_all=TRUE), by=c('policy'))  
++     %>% select(policy, policy.group, pid, ref, covars, ncovars, fit) 
++     %>% left_join(., tables, by=c('policy', 'pid')) 
++     %>% arrange(table, policy.group, pid)    
++     %>% mutate(model.label = glue("{policy %>% sjlabelled::as_label(.) }"))
++     %>% nest(-table) 
++     %>% mutate(
++             tab = future_map(.x=data, function(.x)
++                 modelsummary(.x$fit %>% setNames(., .x$model.label),
++                              statistic='({conf.low}, {conf.high})',
++                              stars=TRUE, ## c('*' = .1, '**' = .05, "***"=0.01),
++                              vcov = 'classical', #"classical", "robust", "stata", "HC4", "HC0",
++                              coef_omit = "Intercept",
++                              output='data.frame',
++                              )%>% 
++                 select(-part, -statistic)%>% 
++                 mutate(term = ifelse(lag(term)==term & !is.na(lag(term)), "", term),
++                        term = stringr::str_replace_all(string=term, pattern="treat.group",
++                                                        replacement="") ) %>%
++                 rename(" "=term)  
++                 ),
++             caption = future_map2_chr(.x=data, .y=table, function(.x, .y)
++                 glue("\\label{{{.y}}}{caption}",
++                      " Party identification measure: {unique(toupper(.x$pid))}")),
++             ##
++             ## latex
++             ## -----
++             tab.latex = purrr::map2(.x=tab, .y=caption, function(.x, .y)
++             (
++                 .x
++                 %>% kable(., "latex", booktabs = T, caption=.y,
++                           escape=T, align=c("l", rep("c", ncol(.)-1)),
++                           digits=4, longtable = F, table.envir = "table",
++                           linesep = NULL)
++                 %>% kable_styling(latex_options = c("scale_down", "repeat_header"),
++                                   position = "center", font_size=NULL)  
++                 %>% add_header_above(
++                         header = c(' '= 1,
++                                    'Outcome: Policy attitude'=4), escape=FALSE)  
++                 %>% column_spec(2:5, width = "2.5cm") 
++                 %>% str_replace_all(string=.,
++                                     pattern="..\\\\centering\\\\arraybackslash.p", replacement="x")
++             )
++             )
++         )
++ )
+> tabs %>% print(n=100)
+# A tibble: 4 × 5
+  table  data             tab           caption                                            tab.latex
+  <chr>  <list>           <list>        <chr>                                              <list>   
+1 tab-g1 <tibble [4 × 8]> <df [42 × 5]> "\\label{tab-g1}OLS estimates with standard error… <chr [1]>
+2 tab-g2 <tibble [4 × 8]> <df [42 × 5]> "\\label{tab-g2}OLS estimates with standard error… <chr [1]>
+3 tab-g3 <tibble [4 × 8]> <df [42 × 5]> "\\label{tab-g3}OLS estimates with standard error… <chr [1]>
+4 tab-g4 <tibble [4 × 8]> <df [42 × 5]> "\\label{tab-g4}OLS estimates with standard error… <chr [1]>
+> ## 
+> if (SAVE) {
++     for (i in 1:nrow(tabs))
++     {
++         table = tabs$table[[i]]
++         tab   = tabs$tab[[i]]
++         tabl  = tabs$tab.latex[[i]]
++ 
++         cat(glue("Saving {table}...") )
++         fn = file.path(PATH_MAN_TABLES, glue("{table}"))
++         write.table(x=tab, file=glue("{fn}.csv") , row.names=F, sep=';')
++         write_xlsx(x=tab, path=glue("{fn}.xlsx"))
++         writeLines(text=tabl, glue("{fn}.tex"))
++         cat("done!\n")
++     }
++ }
+Saving tab-g1...done!
+Saving tab-g2...done!
+Saving tab-g3...done!
+Saving tab-g4...done!
+> 
+> ## checking
+> ## --------
+> ## tab$tab[[1]]
+> ## tab$tab.latex[[1]]
+> 
+> ## ** DONE Table G9
+> 
+> ## See Table 3 of the main paper
+> 
+> ## ** DONE Table H1: manipulation check stacked
+> 
+> table = "tab-h1"
+> ## 
+> # table
+> tab = modelsummary(res.mc.stack,
++                    statistic='({conf.low}, {conf.high})',
++                    stars=TRUE, ## c('*' = .1, '**' = .05, "***"=0.01),
++                    vcov = 'classical', #"classical", "robust", "stata", "HC4", "HC0",
++                    coef_omit = "Intercept",
++                    coef_rename=c('mcmc1'='MC1',
++                                  'aware'='Aware',
++                                  'pid.catRepublican voter'='Rep. voter',
++                                  unlist(LABELS.VARS[CONTROLS])
++                                  ),
++                    gof_omit = 'Errors|F|AIC|BIC|Lik', # regexp to exclude stats summary (AIC, etc)
++                    output='data.frame',
++                    )%>% 
++     select(-part, -statistic)%>% 
++     mutate(term = ifelse(lag(term)==term & !is.na(lag(term)), "", term))
+> tab
+                   term              (1)              (2)              (3)              (4)              (5)
+1                 Aware         -0.216**          -0.190*         -0.209**          -0.183*         -0.275**
+2                       (-0.356, -0.075) (-0.359, -0.022) (-0.347, -0.072) (-0.346, -0.019) (-0.473, -0.076)
+3            Rep. voter                            -0.163                            -0.144                 
+4                                         (-0.379, 0.052)                   (-0.361, 0.074)                 
+5      Aware:Rep. voter                            -0.052                            -0.065                 
+6                                         (-0.356, 0.252)                   (-0.363, 0.232)                 
+7       Education (std)                                           -0.104**         -0.109**                 
+8                                                         (-0.182, -0.027) (-0.187, -0.031)                 
+9             Age (std)                                             -0.023           -0.041                 
+10                                                         (-0.091, 0.045)  (-0.111, 0.029)                 
+11         Income (std)                                             -0.031           -0.028                 
+12                                                         (-0.112, 0.051)  (-0.110, 0.053)                 
+13         Race (white)                                          -0.324***         -0.273**                 
+14                                                        (-0.485, -0.163) (-0.440, -0.105)                 
+15      Gender (female)                                          -0.271***        -0.295***                 
+16                                                        (-0.414, -0.128) (-0.440, -0.151)                 
+17   Need for cognition                                            0.649**          0.597**                 
+18                                                          (0.213, 1.085)   (0.158, 1.035)                 
+19    Need for accuracy                                             -0.194           -0.293                 
+20                                                         (-0.660, 0.272)  (-0.767, 0.181)                 
+21                  MC1                                                                               -0.092
+22                                                                                           (-0.287, 0.102)
+23            Aware:MC1                                                                                0.119
+24                                                                                           (-0.162, 0.399)
+25       MC1:Rep. voter                                                                                     
+26                                                                                                          
+27 Aware:MC1:Rep. voter                                                                                     
+28                                                                                                          
+29    SD (Observations)            1.005            1.002            0.971            0.970                 
+30             Num.Obs.              792              792              792              792              792
+31                   R2                                                                                0.013
+32              R2 Adj.                                                                                0.009
+33             R2 Marg.            0.011            0.019            0.084            0.089                 
+34                 RMSE             1.00             1.00             0.97             0.96             1.00
+                (6)              (7)              (8)
+1           -0.271*         -0.269**          -0.264*
+2  (-0.510, -0.033) (-0.462, -0.076) (-0.495, -0.033)
+3            -0.203                            -0.184
+4   (-0.509, 0.102)                   (-0.485, 0.118)
+5             0.020                             0.006
+6   (-0.411, 0.451)                   (-0.413, 0.425)
+7                           -0.104**         -0.109**
+8                   (-0.182, -0.027) (-0.187, -0.031)
+9                             -0.023           -0.041
+10                   (-0.091, 0.045)  (-0.111, 0.029)
+11                            -0.031           -0.028
+12                   (-0.112, 0.051)  (-0.110, 0.053)
+13                         -0.324***         -0.273**
+14                  (-0.485, -0.163) (-0.440, -0.105)
+15                         -0.271***        -0.295***
+16                  (-0.414, -0.128) (-0.440, -0.150)
+17                           0.649**          0.597**
+18                    (0.213, 1.085)   (0.157, 1.036)
+19                            -0.194           -0.293
+20                   (-0.660, 0.273)  (-0.768, 0.182)
+21           -0.115           -0.092           -0.115
+22  (-0.344, 0.114)  (-0.280, 0.096)  (-0.337, 0.107)
+23            0.162            0.119            0.162
+24  (-0.175, 0.499)  (-0.153, 0.390)  (-0.164, 0.488)
+25            0.080                             0.080
+26  (-0.351, 0.512)                   (-0.337, 0.498)
+27           -0.143                            -0.143
+28  (-0.753, 0.466)                   (-0.733, 0.446)
+29                                                   
+30              792              792              792
+31            0.020            0.086            0.092
+32            0.012            0.074            0.075
+33                                                   
+34             1.00             0.97             0.96
+> 
+> ## 
+> ## latex
+> caption=glue("\\label{{{table}}}Linear regression models of the stacked manipulation check questions on the awareness message.") 
+> pvalues = glue("\\multicolumn{{{ncol(tab)}}}{{r}}{{\\rule{{0pt}}{{1em}}}",
++                "+ p $<$ 0.1, * p $<$ 0.05, ** p $<$ 0.01, *** p $<$ 0.001}") 
+> tabl = (
++     tab
++     %>% kable(., "latex", booktabs = T, caption=caption, escape=F,
++               align=c("l", rep("c", ncol(.)-1)),
++               digits=4, longtable = F, table.envir = "table",
++               linesep = NULL)
++     %>% kable_styling(latex_options = c("scale_down", "repeat_header", "hold_position"),
++                       position = "center", font_size=NULL)
++     ## add nlines
++     %>% row_spec(., 28, extra_latex_after = 'MC Random effects & Yes & Yes & Yes & Yes & No & No& No & No\\\\') 
++     %>% row_spec(., 28, extra_latex_after = '\\midrule')  
++     %>% landscape() 
++ )
+> tabl
+
+\begin{landscape}\begin{table}[!h]
+\centering
+\caption{\label{tab-h1}Linear regression models of the stacked manipulation check questions on the awareness message.}
+\centering
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
+\begin{tabular}[t]{lcccccccc}
+\toprule
+term & (1) & (2) & (3) & (4) & (5) & (6) & (7) & (8)\\
+\midrule
+Aware & -0.216** & -0.190* & -0.209** & -0.183* & -0.275** & -0.271* & -0.269** & -0.264*\\
+ & (-0.356, -0.075) & (-0.359, -0.022) & (-0.347, -0.072) & (-0.346, -0.019) & (-0.473, -0.076) & (-0.510, -0.033) & (-0.462, -0.076) & (-0.495, -0.033)\\
+Rep. voter &  & -0.163 &  & -0.144 &  & -0.203 &  & -0.184\\
+ &  & (-0.379, 0.052) &  & (-0.361, 0.074) &  & (-0.509, 0.102) &  & (-0.485, 0.118)\\
+Aware:Rep. voter &  & -0.052 &  & -0.065 &  & 0.020 &  & 0.006\\
+ &  & (-0.356, 0.252) &  & (-0.363, 0.232) &  & (-0.411, 0.451) &  & (-0.413, 0.425)\\
+Education (std) &  &  & -0.104** & -0.109** &  &  & -0.104** & -0.109**\\
+ &  &  & (-0.182, -0.027) & (-0.187, -0.031) &  &  & (-0.182, -0.027) & (-0.187, -0.031)\\
+Age (std) &  &  & -0.023 & -0.041 &  &  & -0.023 & -0.041\\
+ &  &  & (-0.091, 0.045) & (-0.111, 0.029) &  &  & (-0.091, 0.045) & (-0.111, 0.029)\\
+Income (std) &  &  & -0.031 & -0.028 &  &  & -0.031 & -0.028\\
+ &  &  & (-0.112, 0.051) & (-0.110, 0.053) &  &  & (-0.112, 0.051) & (-0.110, 0.053)\\
+Race (white) &  &  & -0.324*** & -0.273** &  &  & -0.324*** & -0.273**\\
+ &  &  & (-0.485, -0.163) & (-0.440, -0.105) &  &  & (-0.485, -0.163) & (-0.440, -0.105)\\
+Gender (female) &  &  & -0.271*** & -0.295*** &  &  & -0.271*** & -0.295***\\
+ &  &  & (-0.414, -0.128) & (-0.440, -0.151) &  &  & (-0.414, -0.128) & (-0.440, -0.150)\\
+Need for cognition &  &  & 0.649** & 0.597** &  &  & 0.649** & 0.597**\\
+ &  &  & (0.213, 1.085) & (0.158, 1.035) &  &  & (0.213, 1.085) & (0.157, 1.036)\\
+Need for accuracy &  &  & -0.194 & -0.293 &  &  & -0.194 & -0.293\\
+ &  &  & (-0.660, 0.272) & (-0.767, 0.181) &  &  & (-0.660, 0.273) & (-0.768, 0.182)\\
+MC1 &  &  &  &  & -0.092 & -0.115 & -0.092 & -0.115\\
+ &  &  &  &  & (-0.287, 0.102) & (-0.344, 0.114) & (-0.280, 0.096) & (-0.337, 0.107)\\
+Aware:MC1 &  &  &  &  & 0.119 & 0.162 & 0.119 & 0.162\\
+ &  &  &  &  & (-0.162, 0.399) & (-0.175, 0.499) & (-0.153, 0.390) & (-0.164, 0.488)\\
+MC1:Rep. voter &  &  &  &  &  & 0.080 &  & 0.080\\
+ &  &  &  &  &  & (-0.351, 0.512) &  & (-0.337, 0.498)\\
+Aware:MC1:Rep. voter &  &  &  &  &  & -0.143 &  & -0.143\\
+ &  &  &  &  &  & (-0.753, 0.466) &  & (-0.733, 0.446)\\
+\midrule
+MC Random effects & Yes & Yes & Yes & Yes & No & No& No & No\\
+SD (Observations) & 1.005 & 1.002 & 0.971 & 0.970 &  &  &  & \\
+Num.Obs. & 792 & 792 & 792 & 792 & 792 & 792 & 792 & 792\\
+R2 &  &  &  &  & 0.013 & 0.020 & 0.086 & 0.092\\
+R2 Adj. &  &  &  &  & 0.009 & 0.012 & 0.074 & 0.075\\
+R2 Marg. & 0.011 & 0.019 & 0.084 & 0.089 &  &  &  & \\
+RMSE & 1.00 & 1.00 & 0.97 & 0.96 & 1.00 & 1.00 & 0.97 & 0.96\\
+\bottomrule
+\end{tabular}}
+\end{table}
+\end{landscape}
+> ## 
+> if (SAVE) {
++     cat(glue("Saving {table}...") )
++     fn = file.path(PATH_MAN_TABLES, glue("{table}"))
++     write.table(x=tab, file=glue("{fn}.csv") , row.names=F, sep=';')
++     write_xlsx(x=tab, path=glue("{fn}.xlsx"))
++     writeLines(text=tabl, glue("{fn}.tex"))
++     cat("done!\n")
++ }
+Saving tab-h1...done!
+> 
+> 
+> 
+> ## ** DONE Table I1 to I4   (PSID regressions)
+> 
+> ref='G0'
+> tables = (
++     tibble::tribble(
++                 ~policy , ~table  , ~pid,
++                 'gun'   , 'tab-i1', 'psid',
++                 'care'  , 'tab-i1', 'psid',
++                 'min'   , 'tab-i2', 'psid',
++                 'tax'   , 'tab-i2', 'psid',
++                 ##
++                 'elec'  , 'tab-i3', 'psid',
++                 'ocean' , 'tab-i3', 'psid',
++                 'fda'   , 'tab-i4', 'psid',
++                 'admin' , 'tab-i4', 'psid'
++             )
++ )
+> ## 
+> caption = glue("OLS estimates with standard errors clustered at respondent level.",
++                " The outcomes are attitudes toward policies (columns).",
++                " Party identification goes from Democratic (low values)",
++                " to Republican voters (high values).") 
+> tabs = (
++     res.pp 
++     %>% filter(ref==!!ref)  
++     %>% filter(pid=='psid') 
++     %>% left_join(., df %>%
++                      select(policy, policy.group) %>%
++                      distinct(., .keep_all=TRUE), by=c('policy'))  
++     %>% select(policy, policy.group, pid, ref, covars, ncovars, fit) 
++     %>% left_join(., tables, by=c('policy', 'pid')) 
++     %>% arrange(table, policy.group, pid)    
++     %>% mutate(model.label = glue("{policy %>% sjlabelled::as_label(.) }"))
++     %>% nest(-table) 
++     %>% mutate(
++             tab = future_map(.x=data, function(.x)
++                 modelsummary(.x$fit %>% setNames(., .x$model.label),
++                              statistic='({conf.low}, {conf.high})',
++                              stars=TRUE, ## c('*' = .1, '**' = .05, "***"=0.01),
++                              vcov = 'classical', #"classical", "robust", "stata", "HC4", "HC0",
++                              ## 
++                              coef_omit = "Intercept",
++                              output='data.frame',
++                              )%>% 
++                 select(-part, -statistic)%>% 
++                 mutate(term = ifelse(lag(term)==term & !is.na(lag(term)), "", term),
++                        term = stringr::str_replace_all(string=term, pattern="treat.group",
++                                                        replacement="") ) %>%
++                 rename(" "=term)  
++                 ),
++             caption = future_map2_chr(.x=data, .y=table, function(.x, .y)
++                 glue("\\label{{{.y}}}{caption}",
++                      " Party identification measure: {unique(toupper(.x$pid))}")),
++             ##
++             ## latex
++             ## -----
++             tab.latex = purrr::map2(.x=tab, .y=caption, function(.x, .y)
++             (
++                 .x
++                 %>% kable(., "latex", booktabs = T, caption=.y,
++                           escape=T, align=c("l", rep("c", ncol(.)-1)),
++                           digits=4, longtable = F, table.envir = "table",
++                           linesep = NULL)
++                 %>% kable_styling(latex_options = c("scale_down", "repeat_header"),
++                                   position = "center", font_size=NULL)  
++                 %>% add_header_above(
++                         header = c(' '= 1,
++                                    'Outcome: Policy attitude'=4), escape=FALSE)  
++                 %>% column_spec(2:5, width = "2.5cm") 
++                 %>% str_replace_all(string=.,
++                                     pattern="..\\\\centering\\\\arraybackslash.p", replacement="x")
++             )
++             )
++         )
++ )
+> tabs %>% print(n=100)
+# A tibble: 4 × 5
+  table  data             tab           caption                                            tab.latex
+  <chr>  <list>           <list>        <chr>                                              <list>   
+1 tab-i1 <tibble [4 × 8]> <df [42 × 5]> "\\label{tab-i1}OLS estimates with standard error… <chr [1]>
+2 tab-i2 <tibble [4 × 8]> <df [42 × 5]> "\\label{tab-i2}OLS estimates with standard error… <chr [1]>
+3 tab-i3 <tibble [4 × 8]> <df [42 × 5]> "\\label{tab-i3}OLS estimates with standard error… <chr [1]>
+4 tab-i4 <tibble [4 × 8]> <df [42 × 5]> "\\label{tab-i4}OLS estimates with standard error… <chr [1]>
+> ## 
+> if (SAVE) {
++     for (i in 1:nrow(tabs))
++     {
++         table = tabs$table[[i]]
++         tab   = tabs$tab[[i]]
++         tabl  = tabs$tab.latex[[i]]
++         ## 
++         cat(glue("Saving {table}...") )
++         fn = file.path(PATH_MAN_TABLES, glue("{table}"))
++         write.table(x=tab, file=glue("{fn}.csv") , row.names=F, sep=';')
++         write_xlsx(x=tab, path=glue("{fn}.xlsx"))
++         writeLines(text=tabl, glue("{fn}.tex"))
++         cat("done!\n")
++     }
++ }
+Saving tab-i1...done!
+Saving tab-i2...done!
+Saving tab-i3...done!
+Saving tab-i4...done!
+> 
+> 
+> ## ** DONE Table I5
+> 
+> table = "tab-i5"
+> 
+> terms <- c(
++     "(Intercept)"                               = "Dem. voter (baseline)",
++     "awareAware"				= "Dem. voter x Aware",
++     "cueds"					= "Dem. voter x Dem. support cue",
++     "cueds:awareAware"				= "Dem. voter x Dem. support cue x Aware",
++     "cuers"					= "Dem. voter x Rep. support cue",
++     "cuers:awareAware"				= "Dem. voter x Rep. support cue x Aware",
++     "pid.catRepublican voter"			= "Rep. voter",
++     "pid.catRepublican voter:awareAware"	= "Rep. voter x Aware",
++     "pid.catRepublican voter:cueds"		= "Rep. voter x Dem. support cue",
++     "pid.catRepublican voter:cueds:awareAware"	= "Rep. voter x Dem. support cue x Aware",
++     "pid.catRepublican voter:cuers"		= "Rep. voter x Rep. support cue",
++     "pid.catRepublican voter:cuers:awareAware"	= "Rep. voter x Rep. support cue x Aware",
++     ## 
++     "mc.prior"                                  =
++         "Dem. voter x MC before",
++     "awareAware:mc.prior"			=
++         "Dem. voter x Aware x MC before",
++     "cueds:mc.prior"				=
++         "Dem. voter x Dem. support cue x MC before",
++     "cueds:awareAware:mc.prior"	                =
++         "Dem. voter x Dem. support cue x Aware x MC before",
++     "cuers:mc.prior"				=
++         "Dem. voter x Rep. support cue x MC before",
++     "cuers:awareAware:mc.prior"			=
++         "Dem. voter x Rep. support cue x Aware x MC before",
++     "pid.catRepublican voter:mc.prior"		=
++         "Rep. voter x MC before",
++     "pid.catRepublican voter:awareAware:mc.prior"=
++         "Rep. voter x Aware x MC before",
++     "pid.catRepublican voter:cueds:mc.prior"	=
++         "Rep. voter x Dem. support cue x MC before",
++     "pid.catRepublican voter:cueds:awareAware:mc.prior"	=
++         "Rep. voter x Dem. support cue x Aware x MC before",
++     "pid.catRepublican voter:cuers:mc.prior"		=
++         "Rep. voter x Rep. support cue x MC before",
++     "pid.catRepublican voter:cuers:awareAware:mc.prior"	=
++         "Rep. voter x Rep. support cue x Aware x MC before"
++ )
+> 
+> res.agg.mc.int  = res.agg.mc.int %>% mutate(
++                                          ncovars.label = case_when(ncovars==0~"Unadjusted",
++                                                                    T~'Adjusted\\tnote{a}')
++                                      ) 
+> mods        = res.agg.mc.int %>% filter(model=='lpm') %>% pull(fit)
+> names(mods) = res.agg.mc.int %>% filter(model=='lpm') %>% pull(ncovars.label)
+> 
+> 
+> tab = (
++     modelsummary(mods,
++                    estimate  = "{estimate}{stars} ({conf.low}, {conf.high})",
++                    statistic=NULL,
++                    stars=TRUE,
++                    vcov = 'classical', 
++                    ## 
++                    coef_omit = "SD|Cor",
++                    gof_omit = 'Errors|F|RMSE|AIC|BIC|ICC', 
++                    coef_map=terms,
++                    output='data.frame',
++                    )%>% 
++     select(-part, -statistic)%>% 
++     mutate(term = ifelse(lag(term)==term & !is.na(lag(term)), "", term),
++            term = str_replace_all(string=term, pattern=':', replacement=' x '))
++ )
+> tab
+                                                term                 Unadjusted         Adjusted\\tnote{a}
+1                              Dem. voter (baseline)    0.875*** (0.786, 0.964)    0.745*** (0.619, 0.871)
+2                                 Dem. voter x Aware     -0.050 (-0.116, 0.016)     -0.049 (-0.114, 0.016)
+3                      Dem. voter x Dem. support cue      0.035 (-0.031, 0.100)      0.033 (-0.033, 0.098)
+4              Dem. voter x Dem. support cue x Aware      0.033 (-0.052, 0.118)      0.036 (-0.048, 0.121)
+5                      Dem. voter x Rep. support cue -0.229*** (-0.300, -0.158) -0.227*** (-0.298, -0.155)
+6              Dem. voter x Rep. support cue x Aware      0.092* (0.001, 0.182)      0.092+ (0.000, 0.183)
+7                                         Rep. voter -0.227*** (-0.312, -0.142) -0.239*** (-0.323, -0.154)
+8                                 Rep. voter x Aware      0.009 (-0.113, 0.131)      0.009 (-0.113, 0.130)
+9                      Rep. voter x Dem. support cue -0.283*** (-0.392, -0.175) -0.279*** (-0.387, -0.171)
+10             Rep. voter x Dem. support cue x Aware     -0.016 (-0.172, 0.140)     -0.018 (-0.173, 0.138)
+11                     Rep. voter x Rep. support cue    0.326*** (0.215, 0.437)    0.329*** (0.218, 0.440)
+12             Rep. voter x Rep. support cue x Aware   -0.196* (-0.355, -0.037)   -0.203* (-0.362, -0.044)
+13                            Dem. voter x MC before     -0.043 (-0.109, 0.024)     -0.044 (-0.110, 0.022)
+14                    Dem. voter x Aware x MC before      0.053 (-0.042, 0.148)      0.052 (-0.042, 0.146)
+15         Dem. voter x Dem. support cue x MC before      0.033 (-0.051, 0.117)      0.037 (-0.047, 0.121)
+16 Dem. voter x Dem. support cue x Aware x MC before     -0.057 (-0.178, 0.063)     -0.063 (-0.183, 0.058)
+17         Dem. voter x Rep. support cue x MC before      0.052 (-0.033, 0.138)      0.050 (-0.035, 0.136)
+18 Dem. voter x Rep. support cue x Aware x MC before     -0.064 (-0.186, 0.059)     -0.062 (-0.185, 0.060)
+19                            Rep. voter x MC before     -0.037 (-0.163, 0.089)     -0.024 (-0.150, 0.102)
+20                    Rep. voter x Aware x MC before      0.003 (-0.173, 0.180)     -0.005 (-0.181, 0.171)
+21         Rep. voter x Dem. support cue x MC before      0.060 (-0.098, 0.217)      0.053 (-0.105, 0.210)
+22 Rep. voter x Dem. support cue x Aware x MC before     -0.059 (-0.283, 0.165)     -0.058 (-0.282, 0.166)
+23         Rep. voter x Rep. support cue x MC before     -0.029 (-0.189, 0.132)     -0.033 (-0.193, 0.127)
+24 Rep. voter x Rep. support cue x Aware x MC before      0.098 (-0.127, 0.322)      0.102 (-0.122, 0.327)
+25                                          Num.Obs.                       5349                       5349
+26                                          R2 Marg.                      0.152                      0.136
+27                                          R2 Cond.                                                 0.284
+> 
+> ## latex
+> ## -----
+> caption = glue('\\label{{{table}}}Linear probability model estimating the effect',
++                ' of the treatment conditions on partisans policy support.',
++                ' The 95\\% confidence intervals are shown in parenthesis.',
++                ' Model shows the effect of asking the manipulation checks (MC)',
++                ' questions before the policy-cue questions.'
++                )
+> pvalues = glue("\\\\footnotesize  + p $<$ 0.1, * p $<$ 0.05, ** p $<$ 0.01, *** p $<$ 0.001\\\\\\\\")
+> controls = glue_collapse(unlist(LABELS.VARS[CONTROLS]), ", ")
+> controls = glue("Adjustment variables: {controls}")
+> tabl = (
++     tab
++     %>% rename(' '=term) 
++     %>% kable(., "latex", booktabs = T, caption=caption,
++               ## col.names = T,
++               escape=F,
++               ## align=c("l", rep("c", ncol(.)-1)),
++               align=c("l", rep("r", ncol(.)-1)),
++               digits=4, longtable = F, table.envir = "table",
++               linesep = NULL) 
++     %>% kable_styling(latex_options = c("scale_down", "repeat_header", "hold_position"),
++                       position = "center", font_size=NULL)  
++     %>% footnote(
++             general			= pvalues,
++             general_title	= "", ## title of the general legend
++             threeparttable          = T,
++             escape                  = F,
++             alphabet		= c(a = controls),
++             footnote_as_chunk	= F,  # F means fotenotes are spread in multiple lines
++             title_format		= c("italic")
++         ) 
++ )
+> tabl
+\begin{table}[!h]
+\centering
+\caption{\label{tab-i5}Linear probability model estimating the effect of the treatment conditions on partisans policy support. The 95\% confidence intervals are shown in parenthesis. Model shows the effect of asking the manipulation checks (MC) questions before the policy-cue questions.}
+\centering
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
+\begin{threeparttable}
+\begin{tabular}[t]{lrr}
+\toprule
+  & Unadjusted & Adjusted\tnote{a}\\
+\midrule
+Dem. voter (baseline) & 0.875*** (0.786, 0.964) & 0.745*** (0.619, 0.871)\\
+Dem. voter x Aware & -0.050 (-0.116, 0.016) & -0.049 (-0.114, 0.016)\\
+Dem. voter x Dem. support cue & 0.035 (-0.031, 0.100) & 0.033 (-0.033, 0.098)\\
+Dem. voter x Dem. support cue x Aware & 0.033 (-0.052, 0.118) & 0.036 (-0.048, 0.121)\\
+Dem. voter x Rep. support cue & -0.229*** (-0.300, -0.158) & -0.227*** (-0.298, -0.155)\\
+Dem. voter x Rep. support cue x Aware & 0.092* (0.001, 0.182) & 0.092+ (0.000, 0.183)\\
+Rep. voter & -0.227*** (-0.312, -0.142) & -0.239*** (-0.323, -0.154)\\
+Rep. voter x Aware & 0.009 (-0.113, 0.131) & 0.009 (-0.113, 0.130)\\
+Rep. voter x Dem. support cue & -0.283*** (-0.392, -0.175) & -0.279*** (-0.387, -0.171)\\
+Rep. voter x Dem. support cue x Aware & -0.016 (-0.172, 0.140) & -0.018 (-0.173, 0.138)\\
+Rep. voter x Rep. support cue & 0.326*** (0.215, 0.437) & 0.329*** (0.218, 0.440)\\
+Rep. voter x Rep. support cue x Aware & -0.196* (-0.355, -0.037) & -0.203* (-0.362, -0.044)\\
+Dem. voter x MC before & -0.043 (-0.109, 0.024) & -0.044 (-0.110, 0.022)\\
+Dem. voter x Aware x MC before & 0.053 (-0.042, 0.148) & 0.052 (-0.042, 0.146)\\
+Dem. voter x Dem. support cue x MC before & 0.033 (-0.051, 0.117) & 0.037 (-0.047, 0.121)\\
+Dem. voter x Dem. support cue x Aware x MC before & -0.057 (-0.178, 0.063) & -0.063 (-0.183, 0.058)\\
+Dem. voter x Rep. support cue x MC before & 0.052 (-0.033, 0.138) & 0.050 (-0.035, 0.136)\\
+Dem. voter x Rep. support cue x Aware x MC before & -0.064 (-0.186, 0.059) & -0.062 (-0.185, 0.060)\\
+Rep. voter x MC before & -0.037 (-0.163, 0.089) & -0.024 (-0.150, 0.102)\\
+Rep. voter x Aware x MC before & 0.003 (-0.173, 0.180) & -0.005 (-0.181, 0.171)\\
+Rep. voter x Dem. support cue x MC before & 0.060 (-0.098, 0.217) & 0.053 (-0.105, 0.210)\\
+Rep. voter x Dem. support cue x Aware x MC before & -0.059 (-0.283, 0.165) & -0.058 (-0.282, 0.166)\\
+Rep. voter x Rep. support cue x MC before & -0.029 (-0.189, 0.132) & -0.033 (-0.193, 0.127)\\
+Rep. voter x Rep. support cue x Aware x MC before & 0.098 (-0.127, 0.322) & 0.102 (-0.122, 0.327)\\
+Num.Obs. & 5349 & 5349\\
+R2 Marg. & 0.152 & 0.136\\
+R2 Cond. &  & 0.284\\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\item \footnotesize  + p $<$ 0.1, * p $<$ 0.05, ** p $<$ 0.01, *** p $<$ 0.001\\
+\item[a] Adjustment variables: Education (std), Age (std), Income (std), Race (white), Gender (female), Need for cognition, Need for accuracy
+\end{tablenotes}
+\end{threeparttable}}
+\end{table}
+> 
+> 
+> 
+> 
+> if (SAVE) {
++     cat(glue("Saving {table}...") )
++     fn = file.path(PATH_MAN_TABLES, glue("{table}"))
++     write.table(x=tab, file=glue("{fn}.csv") , row.names=F, sep=';')
++     write_xlsx(x=tab, path=glue("{fn}.xlsx"))
++     writeLines(text=tabl, glue("{fn}.tex"))
++     cat("done!\n")
++ }
+Saving tab-i5...done!
+> 
+> ## ** DONE Table i6
+> 
+> table = 'tab-i6'
+> ## 
+> ## table
+> ## -----
+> plan(sequential)
+> mods = list('Dem. Support (1)' = res.ds,
++             'Dem. Support (2)' = res.ds.adj,
++             'Rep. Support (3)' = res.rs,
++             'Rep. Support (4)' = res.rs.adj
++             )
+> add.info = tribble(~`term`,~`Dem. Support (1)`,~`Dem. Support (2)`,
++                    ~`Rep. Support (3)`,~`Rep. Support (4)`,
++                   'Controls$^a$', 'No', "Yes", "No", "Yes") 
+> attr(add.info, 'position') = c(7)
+> tab = (
++     modelsummary(mods,
++                  statistic='({conf.low}, {conf.high})',
++                  escape=F,
++                  stars=T,
++                  vcov = 'classical', 
++                  coef_rename = unlist(LABELS.VARS),
++                  add_rows = add.info,
++                  coef_omit = "Intercept|^Cor .*|educ|age|inc|white|female|nfc|nfa",
++                  gof_omit = 'F|BIC|AIC|R2|RMSE|ICC', 
++                  output='data.frame',
++                  )
++     %>% select(-part, -statistic)
++     %>% mutate(term = ifelse(lag(term)==term & !is.na(lag(term)), "", term),
++                term = str_replace(string=term, pattern=":", replacement=" x ") %>% 
++                    str_replace(string=., pattern="`Party cue effect`", replacement="cue") %>% 
++                    str_replace(string=., pattern="`Awareness effect`", replacement="awareness") %>% 
++                    str_replace(string=.,
++                                pattern="Party cue effect x Awareness effect",
++                                replacement="Party cue x Awareness effect"),
++                ) 
++     %>% rename(" "=term)   
++     %>% rename_with(~str_replace(string=., pattern="(Dem|Rep). Support", replacement=""))
++ )
+> cat(glue("\n\n{names(mods)}\n\n") )
+
+Dem. Support (1)
+ 
+Dem. Support (2)
+ 
+Rep. Support (3)
+ 
+Rep. Support (4)
+> tab  %>% print(n=100, na.print = '')
+                                            (1)             (2)              (3)              (4)
+1              Party cue effect        0.701***        0.707***         1.157***         1.138***
+2                                (0.391, 1.011)  (0.395, 1.018)   (0.813, 1.500)   (0.796, 1.480)
+3              Awareness effect          -0.115          -0.114            0.210            0.203
+4                               (-0.494, 0.264) (-0.484, 0.255)  (-0.113, 0.533)  (-0.113, 0.519)
+5  Party cue x Awareness effect           0.059           0.039         -0.570**         -0.565**
+6                               (-0.370, 0.488) (-0.384, 0.463) (-0.952, -0.188) (-0.943, -0.188)
+7                  Controls$^a$              No             Yes               No              Yes
+8               SD (cue policy)           0.188           0.195            0.338            0.336
+9         SD (awareness policy)           0.230           0.215            0.139            0.127
+10         SD (cue x awareness)           0.232           0.213            0.230            0.216
+11                     Num.Obs.            3589            3589             3543             3543
+12                   Std.Errors             IID             IID              IID              IID
+> 
+> ## 
+> ## latex
+> ## -----
+> adj.vars = paste(unlist(LABELS.VARS[names(LABELS.VARS) %in% CONTROLS]),
++                  collapse=', ')
+> pvalues=glue("\\\\footnotesize  + p $<$ 0.1, * p $<$ 0.05, ** p $<$ 0.01, *** p $<$ 0.001\\\\\\\\")
+> caption=glue("\\label{{{table}}} Causal effect of party cues and",
++              " awareness across policy issues. Point estimates",
++              " are logistic regression coefficients with random",
++              " effects at subject and policy levels.")
+> tabl = (
++     tab 
++     %>% kable(., "latex", booktabs = T, caption=caption,
++               escape=F, align=c("l", rep("c", ncol(.)-1)),
++               digits=4, longtable = F, table.envir = "table",
++               linesep = NULL)
++     %>% kable_styling(latex_options = c("scale_down", "repeat_header", "hold_position"),
++                       position = "center", font_size=NULL)   
++     %>% add_header_above(
++             header = c(' '= 1,
++                        'Party Cue: Dem. Support'=2,
++                        'Party Cue: Rep. Support'=2
++                        ),
++             escape=FALSE)  
++     %>% add_header_above(
++             header = c(' '= 1,
++                        'Outcome: Partisan Policy Attitude Congruent with Party Cue'=4),
++             escape=FALSE)  
++     %>% kableExtra::footnote(
++                         general			= pvalues,
++                         general_title	= "", ## title of the general legend
++                         alphabet	= c(a = glue("Controls: {adj.vars}") ),
++                         threeparttable          = T,
++                         escape                  = F,
++                         footnote_as_chunk	= F,  # F means fotenotes are spread in multiple lines
++                         title_format		= NULL
++                     ) 
++ )
+> tabl
+\begin{table}[!h]
+\centering
+\caption{\label{tab-i6} Causal effect of party cues and awareness across policy issues. Point estimates are logistic regression coefficients with random effects at subject and policy levels.}
+\centering
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
+\begin{threeparttable}
+\begin{tabular}[t]{lcccc}
+\toprule
+\multicolumn{1}{c}{ } & \multicolumn{4}{c}{Outcome: Partisan Policy Attitude Congruent with Party Cue} \\
+\cmidrule(l{3pt}r{3pt}){2-5}
+\multicolumn{1}{c}{ } & \multicolumn{2}{c}{Party Cue: Dem. Support} & \multicolumn{2}{c}{Party Cue: Rep. Support} \\
+\cmidrule(l{3pt}r{3pt}){2-3} \cmidrule(l{3pt}r{3pt}){4-5}
+  &  (1) &  (2) &  (3) &  (4)\\
+\midrule
+Party cue effect & 0.701*** & 0.707*** & 1.157*** & 1.138***\\
+ & (0.391, 1.011) & (0.395, 1.018) & (0.813, 1.500) & (0.796, 1.480)\\
+Awareness effect & -0.115 & -0.114 & 0.210 & 0.203\\
+ & (-0.494, 0.264) & (-0.484, 0.255) & (-0.113, 0.533) & (-0.113, 0.519)\\
+Party cue x Awareness effect & 0.059 & 0.039 & -0.570** & -0.565**\\
+ & (-0.370, 0.488) & (-0.384, 0.463) & (-0.952, -0.188) & (-0.943, -0.188)\\
+Controls$^a$ & No & Yes & No & Yes\\
+SD (cue policy) & 0.188 & 0.195 & 0.338 & 0.336\\
+SD (awareness policy) & 0.230 & 0.215 & 0.139 & 0.127\\
+SD (cue x awareness) & 0.232 & 0.213 & 0.230 & 0.216\\
+Num.Obs. & 3589 & 3589 & 3543 & 3543\\
+Std.Errors & IID & IID & IID & IID\\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\item \footnotesize  + p $<$ 0.1, * p $<$ 0.05, ** p $<$ 0.01, *** p $<$ 0.001\\
+\item[a] Controls: Age (std), Education (std), Income (std), Gender (female), Race (white), Need for cognition, Need for accuracy
+\end{tablenotes}
+\end{threeparttable}}
+\end{table}
+> if (PRR) {
++     tabl = str_replace(string=tabl,
++                        pattern="\\\\caption",
++                        replacement="\\\\placeholdertable{120}{-150}\\\n\\\\caption")
++ }
+> ## cat(tabl)
+> if (SAVE) {save.table(tab, tabl, PATH_MAN_TABLES, table)}
+Saving tab-i6...done!
+> 
+> ## 
+> cat("\n ------------ Report ------------\n")
+
+ ------------ Report ------------
+> for (mod in 1:length(mods))
++ {
++     glue("Collecting {mod}")
++     tab = avg_predictions(mods[[mod]],
++                           variables = c('Party cue effect', 'Awareness effect'),
++                           type='response')%>% 
++         as_tibble() %>%
++         rename("pred"=estimate)
++     ## 
++     print(glue("Model: {names(mods)[mod]}"))
++     print(tab)
++ }
+Found more than one class "haven_labelled" in cache; using the first, from namespace 'haven'
+Also defined by ‘optmatch’
+Model: Dem. Support (1)
+# A tibble: 4 × 9
+  `Party cue effect` `Awareness effect`  pred std.error statistic   p.value s.value conf.low
+               <int>              <int> <dbl>     <dbl>     <dbl>     <dbl>   <dbl>    <dbl>
+1                  0                  0 0.734    0.0288      25.5 1.74e-143    474.    0.678
+2                  1                  0 0.835    0.0179      46.6 0            Inf     0.800
+3                  0                  1 0.703    0.0369      19.0 9.13e- 81    266.    0.631
+4                  1                  1 0.830    0.0179      46.3 0            Inf     0.795
+Model: Dem. Support (2)
+# A tibble: 4 × 9
+  `Party cue effect` `Awareness effect`  pred std.error statistic   p.value s.value conf.low
+               <int>              <int> <dbl>     <dbl>     <dbl>     <dbl>   <dbl>    <dbl>
+1                  0                  0 0.734    0.0290      25.3 1.07e-141    468.    0.677
+2                  1                  0 0.836    0.0176      47.4 0            Inf     0.801
+3                  0                  1 0.703    0.0366      19.2 1.71e- 82    272.    0.632
+4                  1                  1 0.828    0.0179      46.4 0            Inf     0.793
+Model: Rep. Support (3)
+# A tibble: 4 × 9
+  `Party cue effect` `Awareness effect`  pred std.error statistic  p.value s.value conf.low
+               <int>              <int> <dbl>     <dbl>     <dbl>    <dbl>   <dbl>    <dbl>
+1                  0                  0 0.257    0.0274      9.38 6.65e-21    67.0    0.203
+2                  1                  0 0.465    0.0467      9.97 2.10e-23    75.3    0.374
+3                  0                  1 0.296    0.0353      8.39 4.81e-17    54.2    0.227
+4                  1                  1 0.388    0.0450      8.61 7.19e-18    56.9    0.299
+Model: Rep. Support (4)
+# A tibble: 4 × 9
+  `Party cue effect` `Awareness effect`  pred std.error statistic  p.value s.value conf.low
+               <int>              <int> <dbl>     <dbl>     <dbl>    <dbl>   <dbl>    <dbl>
+1                  0                  0 0.259    0.0277      9.36 8.25e-21    66.7    0.205
+2                  1                  0 0.463    0.0460     10.1  7.78e-24    76.8    0.373
+3                  0                  1 0.297    0.0349      8.50 1.94e-17    55.5    0.228
+4                  1                  1 0.385    0.0451      8.54 1.30e-17    56.1    0.297
+> 
+> 
+> ## ** DONE Table i7 (logistic)
+> 
+> table='tab-i7'
+> ## 
+> ## table
+> ## -----
+> terms <- c(
++     "(Intercept)"                               = "Dem. voter (baseline)",
++     "awareAware"				= "Dem. voter x Aware",
++     "cueds"					= "Dem. voter x Dem. support cue",
++     "cueds:awareAware"				= "Dem. voter x Dem. support cue x Aware",
++     "cuers"					= "Dem. voter x Rep. support cue",
++     "cuers:awareAware"				= "Dem. voter x Rep. support cue x Aware",
++     "pid.catRepublican voter"			= "Rep. voter",
++     "pid.catRepublican voter:awareAware"	= "Rep. voter x Aware",
++     "pid.catRepublican voter:cueds"		= "Rep. voter x Dem. support cue",
++     "pid.catRepublican voter:cueds:awareAware"	= "Rep. voter x Dem. support cue x Aware",
++     "pid.catRepublican voter:cuers"		= "Rep. voter x Rep. support cue",
++     "pid.catRepublican voter:cuers:awareAware"	= "Rep. voter x Rep. support cue x Aware"
++ )
+> res.agg = res.agg %>% mutate(ncovars.label = case_when(ncovars==0~"Unadjusted", T~'Adjusted\\tnote{a}')) 
+> mods = res.agg %>% filter(model=='logistic') %>% pull(fit)
+> names(mods) = res.agg %>% filter(model=='lpm') %>% pull(ncovars.label)
+> tab = (
++     modelsummary(mods,
++                    estimate  = "{estimate}{stars} ({conf.low}, {conf.high})",
++                    ## statistic='({conf.low}, {conf.high})',
++                    statistic=NULL,
++                    stars=TRUE,
++                    vcov = 'classical', 
++                    ## 
++                    coef_omit = "SD|Cor",
++                    gof_omit = 'Errors|F|RMSE|AIC|BIC|ICC', 
++                    coef_map=terms,
++                    ## add_rows = info.controls,
++                    output='data.frame',
++                    )%>% 
++     select(-part, -statistic)%>% 
++     mutate(term = ifelse(lag(term)==term & !is.na(lag(term)), "", term),
++            term = str_replace_all(string=term, pattern=':', replacement=' x '))
++ )
+> tab
+                                    term                 Unadjusted         Adjusted\\tnote{a}
+1                  Dem. voter (baseline)    2.229*** (1.519, 2.939)      1.208* (0.263, 2.154)
+2                     Dem. voter x Aware     -0.269 (-0.681, 0.143)     -0.253 (-0.654, 0.148)
+3          Dem. voter x Dem. support cue      0.509* (0.081, 0.936)      0.516* (0.093, 0.939)
+4  Dem. voter x Dem. support cue x Aware      0.078 (-0.506, 0.662)      0.096 (-0.485, 0.677)
+5          Dem. voter x Rep. support cue -1.403*** (-1.742, -1.063) -1.380*** (-1.718, -1.042)
+6  Dem. voter x Rep. support cue x Aware     0.460+ (-0.019, 0.938)     0.457+ (-0.024, 0.938)
+7                             Rep. voter -1.621*** (-2.062, -1.180) -1.650*** (-2.091, -1.209)
+8                     Rep. voter x Aware      0.117 (-0.489, 0.722)      0.074 (-0.527, 0.675)
+9          Rep. voter x Dem. support cue -1.643*** (-2.222, -1.063) -1.633*** (-2.211, -1.055)
+10 Rep. voter x Dem. support cue x Aware     -0.250 (-1.071, 0.571)     -0.272 (-1.091, 0.547)
+11         Rep. voter x Rep. support cue    2.033*** (1.478, 2.587)    2.013*** (1.460, 2.566)
+12 Rep. voter x Rep. support cue x Aware   -0.925* (-1.681, -0.168)   -0.927* (-1.682, -0.172)
+13                              Num.Obs.                       5349                       5349
+14                              R2 Marg.                      0.186                      0.201
+15                              R2 Cond.                      0.434                      0.435
+> 
+> ## latex
+> ## -----
+> caption = glue('\\label{{{table}}}Logistic regression estimates of the effect',
++                ' of the treatment conditions on partisans policy support.',
++                ' The 95\\% confidence intervals are shown in parenthesis.')
+> pvalues = glue("\\\\footnotesize  + p $<$ 0.1, * p $<$ 0.05, ** p $<$ 0.01, *** p $<$ 0.001\\\\\\\\")
+> controls = glue_collapse(unlist(LABELS.VARS[CONTROLS]), ", ")
+> controls = glue("Adjustment variables: {controls}")
+> tabl = (
++     tab
++     %>% rename(' '=term) 
++     %>% kable(., "latex", booktabs = T, caption=caption,
++               ## col.names = T,
++               escape=F,
++               ## align=c("l", rep("c", ncol(.)-1)),
++               align=c("l", rep("r", ncol(.)-1)),
++               digits=4, longtable = F, table.envir = "table",
++               linesep = NULL) 
++     %>% kable_styling(latex_options = c("hold_position", "scale_down", "repeat_header"),
++                       position = "center", font_size=NULL)  
++     %>% footnote(
++             general			= pvalues,
++             general_title	= "", ## title of the general legend
++             threeparttable          = T,
++             escape                  = F,
++             alphabet		= c(a = controls),
++             footnote_as_chunk	= F,  # F means fotenotes are spread in multiple lines
++             title_format		= c("italic")
++         ) 
++ )
+> tabl
+\begin{table}[!h]
+\centering
+\caption{\label{tab-i7}Logistic regression estimates of the effect of the treatment conditions on partisans policy support. The 95\% confidence intervals are shown in parenthesis.}
+\centering
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
+\begin{threeparttable}
+\begin{tabular}[t]{lrr}
+\toprule
+  & Unadjusted & Adjusted\tnote{a}\\
+\midrule
+Dem. voter (baseline) & 2.229*** (1.519, 2.939) & 1.208* (0.263, 2.154)\\
+Dem. voter x Aware & -0.269 (-0.681, 0.143) & -0.253 (-0.654, 0.148)\\
+Dem. voter x Dem. support cue & 0.509* (0.081, 0.936) & 0.516* (0.093, 0.939)\\
+Dem. voter x Dem. support cue x Aware & 0.078 (-0.506, 0.662) & 0.096 (-0.485, 0.677)\\
+Dem. voter x Rep. support cue & -1.403*** (-1.742, -1.063) & -1.380*** (-1.718, -1.042)\\
+Dem. voter x Rep. support cue x Aware & 0.460+ (-0.019, 0.938) & 0.457+ (-0.024, 0.938)\\
+Rep. voter & -1.621*** (-2.062, -1.180) & -1.650*** (-2.091, -1.209)\\
+Rep. voter x Aware & 0.117 (-0.489, 0.722) & 0.074 (-0.527, 0.675)\\
+Rep. voter x Dem. support cue & -1.643*** (-2.222, -1.063) & -1.633*** (-2.211, -1.055)\\
+Rep. voter x Dem. support cue x Aware & -0.250 (-1.071, 0.571) & -0.272 (-1.091, 0.547)\\
+Rep. voter x Rep. support cue & 2.033*** (1.478, 2.587) & 2.013*** (1.460, 2.566)\\
+Rep. voter x Rep. support cue x Aware & -0.925* (-1.681, -0.168) & -0.927* (-1.682, -0.172)\\
+Num.Obs. & 5349 & 5349\\
+R2 Marg. & 0.186 & 0.201\\
+R2 Cond. & 0.434 & 0.435\\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\item \footnotesize  + p $<$ 0.1, * p $<$ 0.05, ** p $<$ 0.01, *** p $<$ 0.001\\
+\item[a] Adjustment variables: Education (std), Age (std), Income (std), Race (white), Gender (female), Need for cognition, Need for accuracy
+\end{tablenotes}
+\end{threeparttable}}
+\end{table}
+> 
+> 
+> if (SAVE) {
++     cat(glue("Saving {table}...") )
++     fn = file.path(PATH_MAN_TABLES, glue("{table}"))
++     write.table(x=tab, file=glue("{fn}.csv") , row.names=F, sep=';')
++     write_xlsx(x=tab, path=glue("{fn}.xlsx"))
++     writeLines(text=tabl, glue("{fn}.tex"))
++     cat("done!\n")
++ }
+Saving tab-i7...done!
+> 
+> 
+> ## for reporting in the paper
+> ## --------------------------
+> ncovars = 0
+> mods = res.agg %>% filter(model=='lpm') %>% filter(ncovars==!!ncovars) %>% pull(fit)
+> tab.report = (
++     modelsummary(mods,
++                  estimate = glue("{{estimate}} ; {{conf.low}} ; {{conf.high}};",
++                                  " {{p.value}} ;  {{stars}}"),
++                  statistic=NULL, stars=TRUE, 
++                  vcov = 'classical', coef_omit = "SD|Cor",
++                  coef_map=terms, gof_omit = '.', output='data.frame')
++ )
+> tab.report 
+        part                                  term statistic                                     (1)
+1  estimates                 Dem. voter (baseline)  estimate    0.853 ; 0.771 ; 0.935; <0.001 ;  ***
+2  estimates                    Dem. voter x Aware  estimate        -0.024 ; -0.072 ; 0.024; 0.330 ;
+3  estimates         Dem. voter x Dem. support cue  estimate       0.052 ; 0.003 ; 0.100; 0.037 ;  *
+4  estimates Dem. voter x Dem. support cue x Aware  estimate         0.005 ; -0.056 ; 0.065; 0.875 ;
+5  estimates         Dem. voter x Rep. support cue  estimate -0.202 ; -0.259 ; -0.146; <0.001 ;  ***
+6  estimates Dem. voter x Rep. support cue x Aware  estimate      0.060 ; -0.008 ; 0.129; 0.085 ;  +
+7  estimates                            Rep. voter  estimate -0.239 ; -0.302 ; -0.177; <0.001 ;  ***
+8  estimates                    Rep. voter x Aware  estimate         0.004 ; -0.083 ; 0.092; 0.921 ;
+9  estimates         Rep. voter x Dem. support cue  estimate -0.260 ; -0.338 ; -0.182; <0.001 ;  ***
+10 estimates Rep. voter x Dem. support cue x Aware  estimate        -0.040 ; -0.151 ; 0.072; 0.484 ;
+11 estimates         Rep. voter x Rep. support cue  estimate    0.304 ; 0.225 ; 0.384; <0.001 ;  ***
+12 estimates Rep. voter x Rep. support cue x Aware  estimate    -0.138 ; -0.249 ; -0.026; 0.016 ;  *
+> 
+> (
++     tab.report %>% 
++     select(-part, -statistic)%>% 
++     mutate(term = ifelse(lag(term)==term & !is.na(lag(term)), "", term),
++            term = str_replace_all(string=term, pattern=':', replacement=' x '))
++     %>% separate(., col="(1)",
++                  into=c("estimate", "conf.low", 'conf.high', 'p.value', 'stars'), sep=";")  
++     %>% mutate(estimate= 100*as.numeric(estimate),
++                conf.low = 100*as.numeric(conf.low),
++                conf.high= 100*as.numeric(conf.high),
++                p.value.eq = case_when(str_detect(p.value, pattern="<")~"$<$", T~"="),
++                p.value = str_trim(p.value) %>%
++                    str_replace_all(string=., pattern="<", replacement="") ,
++                stars = str_trim(stars),
++                ##
++                estimate = glue("{estimate} ([{conf.low}, {conf.high}];",
++                                  " p-value {p.value.eq} {p.value})")
++                ) 
++     %>% tibble()  
++     %>% select(term, estimate)
++ )%>% print(., n=Inf, width=Inf) 
+# A tibble: 12 × 2
+   term                                  estimate                                 
+   <chr>                                 <glue>                                   
+ 1 Dem. voter (baseline)                 85.3 ([77.1, 93.5]; p-value $<$ 0.001)   
+ 2 Dem. voter x Aware                    -2.4 ([-7.2, 2.4]; p-value = 0.330)      
+ 3 Dem. voter x Dem. support cue         5.2 ([0.3, 10]; p-value = 0.037)         
+ 4 Dem. voter x Dem. support cue x Aware 0.5 ([-5.6, 6.5]; p-value = 0.875)       
+ 5 Dem. voter x Rep. support cue         -20.2 ([-25.9, -14.6]; p-value $<$ 0.001)
+ 6 Dem. voter x Rep. support cue x Aware 6 ([-0.8, 12.9]; p-value = 0.085)        
+ 7 Rep. voter                            -23.9 ([-30.2, -17.7]; p-value $<$ 0.001)
+ 8 Rep. voter x Aware                    0.4 ([-8.3, 9.2]; p-value = 0.921)       
+ 9 Rep. voter x Dem. support cue         -26 ([-33.8, -18.2]; p-value $<$ 0.001)  
+10 Rep. voter x Dem. support cue x Aware -4 ([-15.1, 7.2]; p-value = 0.484)       
+11 Rep. voter x Rep. support cue         30.4 ([22.5, 38.4]; p-value $<$ 0.001)   
+12 Rep. voter x Rep. support cue x Aware -13.8 ([-24.9, -2.6]; p-value = 0.016)   
+> 
+> ## * Figures
+> ## ** DONE Figure F1
+> 
+> figure = 'fig-f1'
+> ## 
+> ## 
+> treat     = "treat.group"
+> ref.group = 'G0'
+> ## table
+> ## -----
+> tab = (
++     res.bal 
++     %>% select(treat, balance) 
++     %>% unnest(balance)  
++     %>% set_value_labels(Covariate=setNames(names(unlist(LABELS.VARS[CONTROLS])),
++                                             unlist(LABELS.VARS[CONTROLS])))  
++     %>% sjlabelled::as_label(.)  
++     %>% mutate(diff = abs(Diff.Un))
++ )
+> tab %>% print(n=100)
+# A tibble: 25 × 5
+   treat                            Covariate         Diff.Un M.Threshold            diff
+   <fct>                            <fct>               <dbl> <chr>                 <dbl>
+ 1 Control (aware)                  Education (std) -0.0234   Balanced, <0.1     0.0234  
+ 2 Control (aware)                  Age (std)        0.00739  Balanced, <0.1     0.00739 
+ 3 Control (aware)                  Income (std)     0.0133   Balanced, <0.1     0.0133  
+ 4 Control (aware)                  Race (white)    -0.0148   Balanced, <0.1     0.0148  
+ 5 Control (aware)                  Gender (female)  0.0142   Balanced, <0.1     0.0142  
+ 6 Rep. Support/Dem. Oppose (aware) Education (std) -0.173    Not Balanced, >0.1 0.173   
+ 7 Rep. Support/Dem. Oppose (aware) Age (std)        0.0182   Balanced, <0.1     0.0182  
+ 8 Rep. Support/Dem. Oppose (aware) Income (std)    -0.0651   Balanced, <0.1     0.0651  
+ 9 Rep. Support/Dem. Oppose (aware) Race (white)     0.0112   Balanced, <0.1     0.0112  
+10 Rep. Support/Dem. Oppose (aware) Gender (female)  0.0162   Balanced, <0.1     0.0162  
+11 Dem. Support/Rep. Oppose         Education (std)  0.0152   Balanced, <0.1     0.0152  
+12 Dem. Support/Rep. Oppose         Age (std)       -0.0106   Balanced, <0.1     0.0106  
+13 Dem. Support/Rep. Oppose         Income (std)     0.00193  Balanced, <0.1     0.00193 
+14 Dem. Support/Rep. Oppose         Race (white)     0.00555  Balanced, <0.1     0.00555 
+15 Dem. Support/Rep. Oppose         Gender (female) -0.0220   Balanced, <0.1     0.0220  
+16 Rep. Support/Dem. Oppose         Education (std) -0.0148   Balanced, <0.1     0.0148  
+17 Rep. Support/Dem. Oppose         Age (std)        0.0128   Balanced, <0.1     0.0128  
+18 Rep. Support/Dem. Oppose         Income (std)     0.0634   Balanced, <0.1     0.0634  
+19 Rep. Support/Dem. Oppose         Race (white)     0.0101   Balanced, <0.1     0.0101  
+20 Rep. Support/Dem. Oppose         Gender (female) -0.00996  Balanced, <0.1     0.00996 
+21 Dem. Support/Rep. Oppose (aware) Education (std) -0.0691   Balanced, <0.1     0.0691  
+22 Dem. Support/Rep. Oppose (aware) Age (std)        0.0800   Balanced, <0.1     0.0800  
+23 Dem. Support/Rep. Oppose (aware) Income (std)    -0.0167   Balanced, <0.1     0.0167  
+24 Dem. Support/Rep. Oppose (aware) Race (white)    -0.000831 Balanced, <0.1     0.000831
+25 Dem. Support/Rep. Oppose (aware) Gender (female) -0.00128  Balanced, <0.1     0.00128 
+> ## 
+> ## plot
+> ## ----
+> x = "diff"
+> y = "Covariate"
+> color    = NULL
+> fill     = 'treat'
+> facet1   = NULL
+> facet2   = NULL
+> leg      = 'Treatmet group'
+> title    = NULL
+> subtitle = NULL
+> caption  = NULL
+> dodge    = .1
+> ylab     = NULL
+> xlab     = glue('Absolute Standardized Mean Difference (reference group: {ref.group})') 
+> g = (
++     tab
++     %>% ggplot(.)
++     + geom_vline(aes(xintercept=threshold), linetype="dashed", col="red")
++     + geom_point(aes_string(x=x, y=y, fill=fill, shape=fill))
++     + scale_colour_grey(start = 0, end = .7, na.value="red") 
++     + scale_fill_grey(start = 0, end = .7, na.value="red") 
++     + scale_shape_manual(values=c(21,22,23, 24,25))
++     + labs(
++           x        = xlab,
++           y        = ylab,
++           color    = leg, 
++           fill     = leg,
++           linetype = leg,
++           shape    = leg,
++           title    = title,
++           subtitle = subtitle,
++           caption  = caption
++       )
++     + ggtheme()
++     + ggguides(ncol=2)
++ )
+> g
+> if (SAVE){save.figure(g, tab, PATH_MAN_FIGURES , figure, 8, 4.5)}
+
+Saving table of figure fig-f1...done!
+Saving figure fig-f1...done!
+> 
+> 
+> 
+> ## ** DONE Figure G1 and G2
+> 
+> SAVE=T
+> figures = c('fig-g2', 'fig-g1')
+> for (figure in figures)
++ {
++     ## 
++     path   = PATH_MAN_FIGURES
++     ## 
++     pid = 'pid'
++     policy = 'gun'
++     policy = 'care'
++     policy = 'admin'
++     policy = 'elec'
++     policy = 'min'
++     policy = 'fda'
++     policy = 'tax'
++     policy = 'ocean'
++     ncovars = 0
++     ## 
++     ## table
++     ## -----
++     gs = list()
++     i  = 0
++     for (treat in c('Dem. Support/Rep. Oppose',
++                     'Rep. Support/Dem. Oppose'))
++     {
++         i = i+1
++         tab= (
++             res.pp
++             %>% filter(pid==!!pid)  
++             ## %>% filter(policy==!!policy)  
++             %>% filter(ncovars==!!ncovars) 
++             %>% select(policy, ncovars, pred) 
++             %>% unnest(pred) 
++             %>% mutate(
++                     group = case_when(
++                         treat.group== "G0" ~  'Control',
++                         treat.group== "G1" ~ 'Dem. Support/Rep. Oppose',
++                         treat.group== "G2" ~ 'Dem. Support/Rep. Oppose',
++                         treat.group== "G3" ~ 'Rep. Support/Dem. Oppose',
++                         treat.group== "G4" ~ 'Rep. Support/Dem. Oppose',
++                         ),
++                     aware = case_when(
++                         ## treat.group== "G0" ~ ' Not aware',
++                         ## treat.group== "G1" ~ ' Not aware',
++                         ## treat.group== "G2" ~ 'Aware',    
++                         ## treat.group== "G3" ~ ' Not aware',
++                         ## treat.group== "G4" ~ 'Aware',    
++                         treat.group== "G0" ~ 'Control',
++                         treat.group== "G1" ~ ' Not aware',
++                         treat.group== "G2" ~ 'Aware',    
++                         treat.group== "G3" ~ ' Not aware',
++                         treat.group== "G4" ~ 'Aware',    
++                         ),
++                     ) 
++             %>% drop_na()  
++             %>% filter(group == !!treat | group=='Control')  
++             %>% mutate(policy = factor(policy,
++                                        LABELS.VALUES[['policy.short']],
++                                        names(LABELS.VALUES[['policy.short']])
++                                        ))
++         )
++         ## plots
++         ## -----
++         x = "pid"
++         y = "att"
++         color    = 'aware'
++         fill     = 'aware'
++         facet1   = 'policy'
++         facet2   = NULL
++         leg      = 'Awareness'
++         title    = NULL
++         treat     = str_replace(string=treat, pattern='Dem.', replacement='Democrats in Congress')%>% 
++             str_replace(string=., pattern='Rep.', replacement='Republicans in Congress')
++         subtitle = glue("Party cue: {treat}")
++         caption  = NULL
++         dodge    = .1
++         ylab     = 'Predicted probability of supporting the policy'
++         xlab = "Voters' Party Identification"
++         xbreaks = c(-.9, .9)
++         xlabels = c('Democrat', 'Republican')
++         g = (
++             tab 
++             %>% ggplot(.)
++             + geom_line(aes_string(x=x, y=y, group=fill, color=fill, linetype=fill), size=1)
++             + geom_ribbon(aes_string(x=x, ymin="ymin", ymax="ymax", linetype=fill, color=fill),
++                           fill="transparent", alpha=0, show.legend=F,
++                           data=.%>% filter(aware!='Control') )
++             ## + scale_fill_grey(start = 0, end = .7, na.value="red") 
++             ## + scale_colour_grey(start = 0, end = .7, na.value="red") 
++             ## + scale_colour_manual(values = c("black", 'gray60', 'black')) 
++             + scale_colour_manual(values = c("black", 'gray60', 'black')) 
++             + scale_linetype_manual(values=c(1, 2, 2))
++             + scale_x_continuous(breaks=xbreaks, limits=c(-1.2, 1.2), labels=xlabels)
++             + facet_wrap(glue("~ {facet1}"), ncol=4,
++                          labeller = labeller(groupwrap = label_wrap_gen(35)))
++             + labs(
++                   x        = xlab,
++                   y        = ylab,
++                   color    = leg, 
++                   fill     = leg,
++                   linetype = leg,
++                   shape    = leg,
++                   title    = title,
++                   subtitle = subtitle,
++                   caption  = caption
++               )
++             + ggguides()
++             + ggtheme2()
++             + theme(strip.placement = "outside",
++                     strip.background = element_rect(colour="white", fill="white"),
++                     strip.text.x = element_text(size=9, face='bold', hjust=0),
++                     strip.text.y = element_text(size=9, face="bold", vjust=0)) 
++         )
++         gs[[i]] = g
++     }
++     ## if(figure=='fig-3'){ g=gs[[2]] }else{ g=gs[[1]] }
++     if(figure=='fig-g2'){ g=gs[[2]] }else{ g=gs[[1]] }
++     print(g)
++     if (SAVE) {save.figure(g, tab, path, figure, 10, 6)}
++ }
+
+Saving table of figure fig-g2...done!
+Saving figure fig-g2...done!
+
+Saving table of figure fig-g1...done!
+Saving figure fig-g1...done!
+> 
+> ## 
+> cat("\n ------------ Report ------------\n")
+
+ ------------ Report ------------
+> ## policy=c('admin', 'elec')
+> policy=c('min', 'tax')
+> tab = (
++     res.pp
++     %>% filter(pid==!!pid) 
++     %>% filter(ncovars==!!ncovars) 
++     %>% filter(policy %in% !!policy) 
++     %>% filter(ref=='G0') 
++     %>% select(ref, policy, summ, fit, pred)
++     %>% unnest(pred)    
++     %>% filter(pid %in% c(-1, 1)) 
++     %>% select(ref, policy, pid, treat.group, att)
++     %>% mutate(att=100*att)
++     %>% pivot_wider(names_from=treat.group,
++                     values_from=att) 
++     %>% mutate(
++             `G3-G0` = G3-G0,
++             `G4-G0 (aware)` = G4-`G0 (aware)`,
++             did = abs(`G3-G0`) - abs(`G4-G0 (aware)`)
++         ) 
++     %>% select(ref,policy, pid, G3, G0, `G3-G0`, G4, 'G0 (aware)', `G4-G0 (aware)`, did)
++ )
+> tab %>% arrange(policy, pid, did) %>% print(n=100)
+# A tibble: 4 × 10
+  ref   policy                    pid    G3    G0 `G3-G0`    G4 `G0 (aware)` `G4-G0 (aware)`   did
+  <chr> <chr+lbl>               <dbl> <dbl> <dbl>   <dbl> <dbl>        <dbl>           <dbl> <dbl>
+1 G0    min [Minimum wage]         -1  76.8  95.3   -18.5  78.8         93.1          -14.3   4.22
+2 G0    min [Minimum wage]          1  72.4  60.2    12.2  51.9         38.4           13.5  -1.28
+3 G0    tax [Taxes on the rich]    -1  83.1  93.8   -10.8  96.4         93.4            2.99  7.77
+4 G0    tax [Taxes on the rich]     1  80.7  57.7    23.0  59.7         48.7           11.0  12.0 
+> ## 
+> tab = (
++     res.pp
++     %>% filter(pid==!!pid) 
++     %>% filter(ncovars==!!ncovars) 
++     %>% filter(policy %in% !!policy) 
++     ## %>% filter(ref=='G0') 
++     %>% select(ref, policy, summ, fit, pred)
++     %>% unnest(summ) 
++     %>% filter(str_detect(term, pattern="pid:.*(G3|G4)")) 
++     %>% mutate(b = glue("{term}: ($\beta$={estimate}; p={p.value})",
++                         .transformer = .signif_transformer(3))%>% 
++                    str_replace(string=., pattern="treat.group", replacement="")
++                ) 
++     %>% select(ref, policy, term, estimate, b)
++ )
+> tab%>% print(n=100)
+# A tibble: 8 × 5
+  ref        policy                  term              estimate b                                   
+  <chr>      <chr+lbl>               <chr>                <dbl> <chr>                               
+1 G0         min [Minimum wage]      pid:treat.groupG3   1.18   "pid:G3: ($\beta$=1.18; p=0.013)"   
+2 G0         min [Minimum wage]      pid:treat.groupG4   0.679  "pid:G4: ($\beta$=0.679; p=0.156)"  
+3 G0 (aware) min [Minimum wage]      pid:treat.groupG3   1.42   "pid:G3: ($\beta$=1.42; p=0.000613)"
+4 G0 (aware) min [Minimum wage]      pid:treat.groupG4   0.920  "pid:G4: ($\beta$=0.92; p=0.0279)"  
+5 G0         tax [Taxes on the rich] pid:treat.groupG3   1.13   "pid:G3: ($\beta$=1.13; p=0.0134)"  
+6 G0         tax [Taxes on the rich] pid:treat.groupG4  -0.244  "pid:G4: ($\beta$=-0.244; p=0.638)" 
+7 G0 (aware) tax [Taxes on the rich] pid:treat.groupG3   1.27   "pid:G3: ($\beta$=1.27; p=0.00564)" 
+8 G0 (aware) tax [Taxes on the rich] pid:treat.groupG4  -0.0958 "pid:G4: ($\beta$=-0.0958; p=0.855)"
+> ## 
+> 
+> 
+> ## ** DONE Figure H1
+> 
+> figure = 'fig-h1'
+> ## 
+> tab = (
++     res.mc 
++     %>% unnest(summ)  
++     %>% filter(term=='aware')  
++     %>% mutate(
++             y.label = factor(y, levels=c('mc1', 'mc2'),
++                              labels=c(glue("{str_wrap(LABELS.VARS[['mc1']], width = 55)}\n(MC 1)") ,
++                                       glue("{str_wrap(LABELS.VARS[['mc2']], width = 55)}\n(MC 2)"))
++                              ),
++             mc.prior.label = case_when(
++                 mc.prior=='either'            ~ 'Before or after (aggreagated)',
++                 mc.prior=='none'              ~ 'After (none asked before)',
++                 mc.prior=='mc1'    & y=='mc1' ~ 'Before',
++                 mc.prior=='mc2'    & y=='mc2' ~ 'Before',
++                 mc.prior=='mc2'    & y=='mc1' ~ 'After',
++                 mc.prior=='mc1'    & y=='mc2' ~ 'After',
++             )
++             )
++     %>% select(-data, -fit, -covars)
++ )
+> tab
+# A tibble: 16 × 17
+  mc.prior y     f      ncovars adj       n effect group term  estimate std.error statistic conf.low
+  <chr>    <chr> <glue>   <int> <chr> <int> <chr>  <chr> <chr>    <dbl>     <dbl>     <dbl>    <dbl>
+1 either   mc1   mc1~a…       1 No      595 fixed  <NA>  aware  -0.0904    0.0812     -1.11   -0.249
+2 either   mc1   mc1~a…       7 Yes     595 fixed  <NA>  aware  -0.106     0.0803     -1.32   -0.263
+3 either   mc2   mc2~a…       1 No      599 fixed  <NA>  aware  -0.246     0.0777     -3.17   -0.399
+4 either   mc2   mc2~a…       7 Yes     599 fixed  <NA>  aware  -0.249     0.0764     -3.26   -0.399
+5 mc1      mc1   mc1~a…       1 No      198 <NA>   <NA>  aware  -0.220     0.147      -1.49   -0.510
+6 mc1      mc1   mc1~a…       7 Yes     198 <NA>   <NA>  aware  -0.190     0.143      -1.33   -0.472
+# ℹ 10 more rows
+> ## 
+> x = 'y.label'
+> y = "estimate"
+> color    = NULL
+> fill     = "mc.prior.label"
+> shape    = "mc.prior.label"
+> linetype = 'adj'
+> facet2   = NULL
+> leg      = "Manipulation check (MC) asked before or after the policy questions?"
+> title    = NULL
+> subtitle = NULL
+> caption  = NULL
+> dodge    = .3
+> ylab     = "Average effect of the awareness message on \nagreeing with the statement"
+> xlab     = 'Manipulation check (MC) statement'
+> g = (
++     tab
++     %>% ggplot(.)
++     + geom_hline(aes(yintercept=0) ,linetype="dashed", col="red")
++     + geom_errorbar(aes_string(x=x, color=fill, linetype=linetype, shape=shape,
++                                ymin="conf.low", ymax="conf.high"),
++                     width=.1, position = position_dodge(dodge)) 
++     + geom_point(aes_string(x=x, y=y, fill=fill, linetype=linetype, shape=shape), alpha=1,
++                     position = position_dodge(dodge))
++     + scale_colour_grey(start = 0, end = .7, na.value="red") 
++     + scale_fill_grey(start = 0, end = .7, na.value="red") 
++     + scale_shape_manual(values=c(21,22, 25, 24))
++     ## + facet_wrap(glue("~ {facet1}"), ncol = 1, scales='free')
++     + labs(
++           x        = xlab,
++           y        = ylab,
++           color    = leg, 
++           fill     = leg,
++           linetype = "Adjustment covariates used?",
++           shape    = leg,
++           title    = title,
++           subtitle = subtitle,
++           caption  = caption
++       )
++     + ggguides(ncol=2)
++ )
+> g
+> if (SAVE){
++     save.figure(g, tab, PATH_MAN_FIGURES , figure, 8.5, 4)
++ }
+
+Saving table of figure fig-h1...done!
+Saving figure fig-h1...done!
+> 
+> ## cat("\n ------------ Report ------------\n")
+> ## mod = (
+> ##     res.mc 
+> ##     %>% filter(mc.prior=='mc2')   
+> ##     %>% filter(y=='mc2') 
+> ##     %>% filter(ncovars==1)  
+> ##     %>% pull(fit) %>% extract2(1) 
+> ## )
+> 
+> 
+> 
+> 
+> ## * done
+> 
+> print(sessionInfo())
+R version 4.3.1 (2023-06-16)
+Platform: x86_64-pc-linux-gnu (64-bit)
+Running under: Ubuntu 23.10
+
+Matrix products: default
+BLAS:   /usr/lib/x86_64-linux-gnu/blas/libblas.so.3.11.0 
+LAPACK: /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.11.0
+
+locale:
+ [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C               LC_TIME=en_US.UTF-8        LC_COLLATE=en_US.UTF-8    
+ [5] LC_MONETARY=en_US.UTF-8    LC_MESSAGES=en_US.UTF-8    LC_PAPER=en_US.UTF-8       LC_NAME=C                 
+ [9] LC_ADDRESS=C               LC_TELEPHONE=C             LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
+
+time zone: America/Los_Angeles
+tzcode source: system (glibc)
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] lubridate_1.9.3        forcats_1.0.0          stringr_1.5.1          dplyr_1.1.4            purrr_1.0.2           
+ [6] readr_2.1.5            tidyr_1.3.0            tibble_3.2.1           tidyverse_2.0.0        scales_1.3.0          
+[11] rstatix_0.7.2          ggh4x_0.2.8            jtools_2.2.2           patchwork_1.2.0        cowplot_1.1.3         
+[16] broom.mixed_0.2.9.5    broom_1.0.6            magrittr_2.0.3         glue_1.7.0             marginaleffects_0.21.0
+[21] modelsummary_2.1.1     kableExtra_1.4.0       labelled_2.13.0        dtplyr_1.3.1           readxl_1.4.3          
+[26] writexl_1.5.0          multcomp_1.4-26        TH.data_1.1-2          MASS_7.3-60            survival_3.7-0        
+[31] mvtnorm_1.2-5          lme4_1.1-35.5          Matrix_1.6-4           sjlabelled_1.2.0       sjmisc_2.8.10         
+[36] cobalt_4.5.5           MatchIt_4.5.5          furrr_0.3.1            future_1.34.0          conflicted_1.2.0      
+[41] ggdark_0.2.1           gtsummary_2.0.0        ggplot2_3.4.4          RColorBrewer_1.1-3    
+
+loaded via a namespace (and not attached):
+ [1] rlemon_0.2.1        sandwich_3.1-0      rlang_1.1.2         snakecase_0.11.1    compiler_4.3.1     
+ [6] systemfonts_1.1.0   vctrs_0.6.5         pkgconfig_2.0.3     crayon_1.5.3        fastmap_1.1.1      
+[11] backports_1.5.0     labeling_0.4.3      effectsize_0.8.9    pander_0.6.5        utf8_1.2.4         
+[16] rmarkdown_2.21      tzdb_0.4.0          haven_2.5.4         nloptr_2.0.3        ragg_1.3.2         
+[21] xfun_0.39           cachem_1.0.8        optmatch_0.10.7     chk_0.9.2           parallel_4.3.1     
+[26] R6_2.5.1            tables_0.9.28       stringi_1.8.2       parallelly_1.38.0   car_3.1-2          
+[31] boot_1.3-30         lmtest_0.9-40       estimability_1.5.1  cellranger_1.1.0    Rcpp_1.0.13        
+[36] knitr_1.42          future.apply_1.11.2 zoo_1.8-12          parameters_0.22.1   timechange_0.3.0   
+[41] splines_4.3.1       tidyselect_1.2.0    rstudioapi_0.16.0   abind_1.4-5         codetools_0.2-20   
+[46] listenv_0.9.1       lattice_0.22-6      bayestestR_0.14.0   withr_2.5.2         coda_0.19-4.1      
+[51] evaluate_0.24.0     xml2_1.3.4          pillar_1.9.0        carData_3.0-5       checkmate_2.3.2    
+[56] insight_0.20.2      generics_0.1.3      rprojroot_2.0.4     hms_1.1.3           munsell_0.5.0      
+[61] minqa_1.2.5         xtable_1.8-4        globals_0.16.3      emmeans_1.10.3      tools_4.3.1        
+[66] data.table_1.15.4   grid_4.3.1          datawizard_0.12.2   colorspace_2.1-0    nlme_3.1-165       
+[71] performance_0.12.2  cli_3.6.1           textshaping_0.4.0   fansi_1.0.5         viridisLite_0.4.2  
+[76] svglite_2.1.3       gtable_0.3.3        digest_0.6.31       farver_2.1.2        memoise_2.0.1      
+[81] htmltools_0.5.5     lifecycle_1.0.4    
+> print(version)
+               _                           
+platform       x86_64-pc-linux-gnu         
+arch           x86_64                      
+os             linux-gnu                   
+system         x86_64, linux-gnu           
+status                                     
+major          4                           
+minor          3.1                         
+year           2023                        
+month          06                          
+day            16                          
+svn rev        84548                       
+language       R                           
+version.string R version 4.3.1 (2023-06-16)
+nickname       Beagle Scouts               
+> print(difftime(Sys.time(), time.start, units='mins'))
+Time difference of 36.94 mins
+> cat('\nAll done!\n')
+
+All done!
+> 
+> 
+> proc.time()
+    user   system  elapsed 
+2214.466    1.817 2220.404 
